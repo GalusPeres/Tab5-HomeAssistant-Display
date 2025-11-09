@@ -1,142 +1,184 @@
-// tab_home.cpp
 #include "tab_home.h"
-#include <lvgl.h>
-#include <Arduino.h>  // for dtostrf on ESP32/Arduino
-#include <cstdio>     // for snprintf
-#include <cmath>      // for roundf
 
-/* === Tuning-Konstanten === */
-static const int CARD_H  = 200;   // Kachelhöhe
-static const int VAL_Y   = 24;    // +Y-Offset für Wert+Einheit
-static const int BTN_H   = 100;    // Button-Höhe
-static const int GAP     = 24;    // Spalten-/Zeilengap
-static const int OUTER   = 24;    // Außenränder im Tab
+#include <Arduino.h>
+#include <ctype.h>
+#include <stdint.h>
+#include <lvgl.h>
+
+/* === Layout-Konstanten === */
+static const int SENSOR_CARD_H = 200;
+static const int SCENE_BTN_H = 150;
+static const int GAP = 24;
+static const int OUTER = 24;
 
 /* === Fonts === */
-#if defined(LV_FONT_MONTSERRAT_18) && LV_FONT_MONTSERRAT_18
-  #define FONT_TITLE (&lv_font_montserrat_18)   // Kachel-Titel
+#if defined(LV_FONT_MONTSERRAT_24) && LV_FONT_MONTSERRAT_24
+  #define FONT_TITLE (&lv_font_montserrat_24)
+#elif defined(LV_FONT_MONTSERRAT_22) && LV_FONT_MONTSERRAT_22
+  #define FONT_TITLE (&lv_font_montserrat_22)
 #elif defined(LV_FONT_MONTSERRAT_20) && LV_FONT_MONTSERRAT_20
   #define FONT_TITLE (&lv_font_montserrat_20)
 #else
   #define FONT_TITLE (LV_FONT_DEFAULT)
 #endif
 
-#if defined(LV_FONT_MONTSERRAT_22) && LV_FONT_MONTSERRAT_22
-  #define FONT_UNIT  (&lv_font_montserrat_22)   // Einheit etwas größer
-#elif defined(LV_FONT_MONTSERRAT_20) && LV_FONT_MONTSERRAT_20
-  #define FONT_UNIT  (&lv_font_montserrat_20)
-#else
-  #define FONT_UNIT  (FONT_TITLE)
-#endif
-
 #if defined(LV_FONT_MONTSERRAT_48) && LV_FONT_MONTSERRAT_48
-  #define FONT_VALUE (&lv_font_montserrat_48)   // Wert groß
+  #define FONT_VALUE (&lv_font_montserrat_48)
 #elif defined(LV_FONT_MONTSERRAT_40) && LV_FONT_MONTSERRAT_40
   #define FONT_VALUE (&lv_font_montserrat_40)
-#elif defined(LV_FONT_MONTSERRAT_32) && LV_FONT_MONTSERRAT_32
-  #define FONT_VALUE (&lv_font_montserrat_32)
+#elif defined(LV_FONT_MONTSERRAT_36) && LV_FONT_MONTSERRAT_36
+  #define FONT_VALUE (&lv_font_montserrat_36)
 #else
   #define FONT_VALUE (LV_FONT_DEFAULT)
 #endif
 
-static inline void set_label_style(lv_obj_t* lbl, lv_color_t c, const lv_font_t* f) {
+#if defined(LV_FONT_MONTSERRAT_28) && LV_FONT_MONTSERRAT_28
+  #define FONT_UNIT (&lv_font_montserrat_28)
+#elif defined(LV_FONT_MONTSERRAT_24) && LV_FONT_MONTSERRAT_24
+  #define FONT_UNIT (&lv_font_montserrat_24)
+#else
+  #define FONT_UNIT (FONT_TITLE)
+#endif
+
+/* === Globale State === */
+struct SensorTileWidgets {
+  lv_obj_t* value_label = nullptr;
+  lv_obj_t* unit_label = nullptr;
+};
+
+static lv_obj_t* g_home_grid = nullptr;
+static SensorTileWidgets g_sensor_tiles[HA_SENSOR_SLOT_COUNT];
+static String g_sensor_cache[HA_SENSOR_SLOT_COUNT];
+static String g_sensor_entities[HA_SENSOR_SLOT_COUNT];
+static String g_sensor_units[HA_SENSOR_SLOT_COUNT];
+static String g_scene_aliases[HA_SCENE_SLOT_COUNT];
+static scene_publish_cb_t g_scene_cb = nullptr;
+
+/* === Helfer === */
+static void set_label_style(lv_obj_t* lbl, lv_color_t c, const lv_font_t* f) {
   lv_obj_set_style_text_color(lbl, c, 0);
   lv_obj_set_style_text_font(lbl,  f, 0);
 }
 
-/* === Kachel === */
-// Value labels captured for runtime updates
-static lv_obj_t* g_lbl_out = nullptr;
-static lv_obj_t* g_lbl_in  = nullptr;
-static lv_obj_t* g_lbl_soc = nullptr;
-static lv_obj_t* g_lbl_wohn = nullptr; // HA: Wohnbereich Temperatur
-static lv_obj_t* g_lbl_pv   = nullptr; // HA: PV Haus/Garage (W)
-static scene_publish_cb_t g_scene_cb = nullptr;
-
-static void scene_button_event_cb(lv_event_t* e) {
-  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-  const char* payload = static_cast<const char*>(lv_event_get_user_data(e));
-  if (payload && g_scene_cb) {
-    g_scene_cb(payload);
+static String make_display_label(const String& raw, bool strip_domain) {
+  if (!raw.length()) return String("--");
+  String text = raw;
+  if (strip_domain) {
+    int dot = text.indexOf('.');
+    if (dot >= 0) {
+      text = text.substring(dot + 1);
+    }
   }
+  text.replace('_', ' ');
+  bool new_word = true;
+  for (size_t i = 0; i < text.length(); ++i) {
+    char c = text.charAt(i);
+    if (isalpha(static_cast<unsigned char>(c))) {
+      char mapped = new_word ? toupper(static_cast<unsigned char>(c))
+                             : tolower(static_cast<unsigned char>(c));
+      text.setCharAt(i, mapped);
+      new_word = false;
+    } else {
+      new_word = (c == ' ' || c == '-' || c == '/');
+    }
+  }
+  text.trim();
+  return text.length() ? text : raw;
 }
 
-static lv_obj_t* make_card(lv_obj_t* parent, int col, int row,
-                           const char* title, const char* value, const char* unit) {
+static String sanitize_sensor_value(String raw) {
+  raw.trim();
+  raw.replace(",", ".");
+  String lowered = raw;
+  lowered.toLowerCase();
+  if (!raw.length() || lowered == "unknown" || lowered == "unavailable" || lowered == "none" || lowered == "null") {
+    return String("--");
+  }
+  return raw;
+}
+
+static bool unit_prefers_integer(const String& unit) {
+  if (!unit.length()) return false;
+  String lower = unit;
+  lower.toLowerCase();
+  return lower == "w" || lower == "kw" || lower == "a" || lower == "%";
+}
+
+static String format_sensor_value(uint8_t slot, const String& raw) {
+  if (!raw.length() || raw == "--") {
+    return raw;
+  }
+  if (slot >= HA_SENSOR_SLOT_COUNT) {
+    return raw;
+  }
+  const String& unit = g_sensor_units[slot];
+  if (!unit_prefers_integer(unit)) {
+    return raw;
+  }
+  float val = raw.toFloat();
+  long rounded = lroundf(val);
+  return String(rounded);
+}
+
+static SensorTileWidgets make_sensor_card(lv_obj_t* parent, int col, int row,
+                                          const char* title, const char* value,
+                                          const char* unit) {
   lv_obj_t* card = lv_obj_create(parent);
-  lv_obj_set_style_bg_color(card, lv_color_hex(0x2A2A2A), 0); // helleres Grau (wie Tabbar)
+  lv_obj_set_style_bg_color(card, lv_color_hex(0x2A2A2A), 0);
   lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
-  lv_obj_set_style_radius(card, 24, 0);
+  lv_obj_set_style_radius(card, 22, 0);
   lv_obj_set_style_border_width(card, 0, 0);
   lv_obj_set_style_shadow_width(card, 0, 0);
-  lv_obj_set_style_pad_hor(card, 16, 0);
-  lv_obj_set_style_pad_ver(card, 16, 0);
-  lv_obj_set_height(card, CARD_H);
-  lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE); // Kachel selbst nicht scrollen
+  lv_obj_set_style_pad_hor(card, 20, 0);
+  lv_obj_set_style_pad_ver(card, 24, 0);
+  lv_obj_set_height(card, SENSOR_CARD_H);
+  lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_set_grid_cell(card,
       LV_GRID_ALIGN_STRETCH, col, 1,
       LV_GRID_ALIGN_STRETCH, row, 1);
 
-  // Titel
   lv_obj_t* t = lv_label_create(card);
-  set_label_style(t, lv_color_hex(0xC8C8C8), FONT_TITLE);
+  set_label_style(t, lv_color_hex(0xFFFFFF), FONT_TITLE);
   lv_label_set_text(t, title);
   lv_obj_align(t, LV_ALIGN_TOP_LEFT, 0, 0);
 
-  // Werte-Container zentriert + etwas tiefer
-  lv_obj_t* valrow = lv_obj_create(card);
-  lv_obj_set_style_bg_opa(valrow, LV_OPA_TRANSP, 0);
-  lv_obj_set_style_border_width(valrow, 0, 0);
-  lv_obj_set_style_pad_all(valrow, 0, 0);
-  lv_obj_set_flex_flow(valrow, LV_FLEX_FLOW_ROW);
-  lv_obj_set_style_pad_column(valrow, 10, 0);
-  lv_obj_align(valrow, LV_ALIGN_CENTER, 0, VAL_Y);
-  lv_obj_remove_flag(valrow, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t* row_container = lv_obj_create(card);
+  lv_obj_remove_flag(row_container, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_bg_opa(row_container, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(row_container, 0, 0);
+  lv_obj_set_style_pad_all(row_container, 0, 0);
+  lv_obj_set_style_pad_column(row_container, 14, 0);
+  lv_obj_set_flex_flow(row_container, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(row_container,
+                        LV_FLEX_ALIGN_START,
+                        LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_width(row_container, LV_PCT(100));
+  lv_obj_align(row_container, LV_ALIGN_CENTER, 0, 18);
 
-  // Wert
-  lv_obj_t* v = lv_label_create(valrow);
+  lv_obj_t* v = lv_label_create(row_container);
   set_label_style(v, lv_color_white(), FONT_VALUE);
   lv_label_set_text(v, value);
 
-  // Einheit
-  if (unit && unit[0]) {
-    lv_obj_t* u = lv_label_create(valrow);
-    set_label_style(u, lv_color_hex(0xE0E0E0), FONT_UNIT);
-    lv_label_set_text(u, unit);
-  }
+  lv_obj_t* u = lv_label_create(row_container);
+  set_label_style(u, lv_color_hex(0xE6E6E6), FONT_UNIT);
+  lv_label_set_text(u, unit ? unit : "");
 
-  // Capture first three value labels for Home tab updates
-  if (!g_lbl_out)      g_lbl_out = v;
-  else if (!g_lbl_in)  g_lbl_in  = v;
-  else if (!g_lbl_soc) g_lbl_soc = v;
-
-  // Return value label so caller can update it later
-  return v;
+  return {v, u};
 }
 
-/* === Szenen-Button === */
 static lv_obj_t* make_scene_button(lv_obj_t* parent, int col, int row,
-                                   const char* text, const char* payload = nullptr) {
+                                   const char* text, uint8_t slot) {
   lv_obj_t* btn = lv_button_create(parent);
-
-  // Grundstil
-  lv_obj_set_style_radius(btn, 16, 0);
+  lv_obj_set_style_radius(btn, 18, 0);
   lv_obj_set_style_border_width(btn, 0, 0);
-  lv_obj_set_height(btn, BTN_H);
-  lv_obj_remove_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
-
-  // **Keine** Schatten/Outlines, keine Transparenz-Säume
+  lv_obj_set_style_bg_color(btn, lv_color_hex(0x353535), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(btn, lv_color_hex(0x454545), LV_PART_MAIN | LV_STATE_PRESSED);
+  lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
   lv_obj_set_style_shadow_width(btn, 0, 0);
-  lv_obj_set_style_outline_width(btn, 0, 0);
-  lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
-  lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_PRESSED);
-  lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_FOCUSED);
-
-  // Durchgehend dunkle Farben in allen States
-  lv_obj_set_style_bg_color(btn, lv_color_hex(0x2A2A2A), LV_PART_MAIN | LV_STATE_DEFAULT);
-  lv_obj_set_style_bg_color(btn, lv_color_hex(0x3A3A3A), LV_PART_MAIN | LV_STATE_PRESSED);
-  lv_obj_set_style_bg_color(btn, lv_color_hex(0x2A2A2A), LV_PART_MAIN | LV_STATE_FOCUSED);
+  lv_obj_set_height(btn, SCENE_BTN_H);
+  lv_obj_remove_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_set_grid_cell(btn,
       LV_GRID_ALIGN_STRETCH, col, 1,
@@ -147,15 +189,27 @@ static lv_obj_t* make_scene_button(lv_obj_t* parent, int col, int row,
   lv_label_set_text(l, text);
   lv_obj_center(l);
 
-  const char* user_payload = payload ? payload : text;
-  lv_obj_add_event_cb(btn, scene_button_event_cb, LV_EVENT_CLICKED, (void*)user_payload);
+  lv_obj_add_event_cb(
+      btn,
+      [](lv_event_t* e) {
+        if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+        uintptr_t slot = reinterpret_cast<uintptr_t>(lv_event_get_user_data(e));
+        if (slot >= HA_SCENE_SLOT_COUNT) return;
+        if (!g_scene_cb) return;
+        const String& alias = g_scene_aliases[slot];
+        if (!alias.length()) return;
+        g_scene_cb(alias.c_str());
+      },
+      LV_EVENT_CLICKED,
+      reinterpret_cast<void*>(static_cast<uintptr_t>(slot)));
 
   return btn;
 }
 
+/* === Aufbau Home-Tab === */
 void build_home_tab(lv_obj_t *parent, scene_publish_cb_t scene_cb) {
   g_scene_cb = scene_cb;
-  // Nur der Tab (parent) darf scrollen
+
   lv_obj_set_style_bg_color(parent, lv_color_hex(0x111111), 0);
   lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
   lv_obj_set_scroll_dir(parent, LV_DIR_VER);
@@ -163,86 +217,110 @@ void build_home_tab(lv_obj_t *parent, scene_publish_cb_t scene_cb) {
   lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLL_MOMENTUM);
   lv_obj_set_scrollbar_mode(parent, LV_SCROLLBAR_MODE_OFF);
   lv_obj_set_style_anim_duration(parent, 0, 0);
-
-  // Symmetrische Außenränder
   lv_obj_set_style_pad_left(parent,   OUTER, 0);
   lv_obj_set_style_pad_right(parent,  OUTER, 0);
   lv_obj_set_style_pad_top(parent,    OUTER, 0);
   lv_obj_set_style_pad_bottom(parent, OUTER, 0);
 
-  // Grid: 3 Spalten, 3 Zeilen (Mitte = flexibler Spacer, Buttons unten kleben)
-  lv_obj_t* grid = lv_obj_create(parent);
-
-  // ***Fix gegen „weißes Säumen“ unten: deckender Grid-Hintergrund***
-  lv_obj_set_style_bg_color(grid, lv_color_hex(0x111111), 0);
-  lv_obj_set_style_bg_opa(grid, LV_OPA_COVER, 0);
-
-  lv_obj_set_style_border_width(grid, 0, 0);
-  lv_obj_set_style_pad_all(grid, 0, 0);
-  lv_obj_set_size(grid, lv_pct(100), lv_pct(100));
-  lv_obj_remove_flag(grid, LV_OBJ_FLAG_SCROLLABLE);
+  g_home_grid = lv_obj_create(parent);
+  lv_obj_set_style_bg_color(g_home_grid, lv_color_hex(0x111111), 0);
+  lv_obj_set_style_bg_opa(g_home_grid, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(g_home_grid, 0, 0);
+  lv_obj_set_style_pad_all(g_home_grid, 0, 0);
+  lv_obj_remove_flag(g_home_grid, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_size(g_home_grid, LV_PCT(100), LV_PCT(100));
+  lv_obj_set_style_pad_column(g_home_grid, GAP, 0);
+  lv_obj_set_style_pad_row(g_home_grid, GAP, 0);
 
   static lv_coord_t col_dsc[] = {
     LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST
   };
   static lv_coord_t row_dsc[] = {
-    LV_GRID_CONTENT,  // 0: Karten
-    LV_GRID_CONTENT,  // 1: weitere Karten (HA)
-    LV_GRID_CONTENT,  // 2: Buttons unten
+    LV_GRID_CONTENT,
+    LV_GRID_CONTENT,
+    LV_GRID_CONTENT,
+    LV_GRID_CONTENT,
     LV_GRID_TEMPLATE_LAST
   };
-  lv_obj_set_grid_dsc_array(grid, col_dsc, row_dsc);
+  lv_obj_set_grid_dsc_array(g_home_grid, col_dsc, row_dsc);
 
-  lv_obj_set_style_pad_column(grid, GAP, 0);
-  lv_obj_set_style_pad_row(grid, GAP, 0);
-
-  // Karten (Zeile 0)
-  (void)make_card(grid, 0, 0, "Außentemperatur", "21.7", "°C");
-  (void)make_card(grid, 1, 0, "Innentemperatur", "22.4", "°C");
-  (void)make_card(grid, 2, 0, "Batterie (SoC)",  "73",   "%");
-
-  // Zusätzliche Karten (Zeile 1) aus Home Assistant
-  g_lbl_wohn = make_card(grid, 0, 1, "Wohnbereich", "--", "°C");
-  g_lbl_pv   = make_card(grid, 1, 1, "PV Garage",  "--", "W");
-
-  // Buttons (Zeile 2) -> kleben am unteren Rand
-  (void)make_scene_button(grid, 0, 2, "Aus",   "aus");
-  (void)make_scene_button(grid, 1, 2, "Lesen", "lesen");
-  (void)make_scene_button(grid, 2, 2, "PC",    "pc");
+  home_reload_layout();
 }
 
-// Public API to update values from other modules (e.g., MQTT)
-void home_set_values(float outside_c, float inside_c, int soc_pct) {
-  if (g_lbl_out) {
-    char b1[16];
-    dtostrf(outside_c, 0, 1, b1);
-    lv_label_set_text(g_lbl_out, b1);
+void home_reload_layout() {
+  if (!g_home_grid) return;
+
+  lv_obj_clean(g_home_grid);
+  for (size_t i = 0; i < HA_SENSOR_SLOT_COUNT; ++i) {
+    g_sensor_tiles[i] = {};
+    if (!g_sensor_entities[i].length()) {
+      g_sensor_cache[i] = "--";
+    }
   }
-  if (g_lbl_in) {
-    char b2[16];
-    dtostrf(inside_c, 0, 1, b2);
-    lv_label_set_text(g_lbl_in, b2);
+
+  const HaBridgeConfigData& cfg = haBridgeConfig.get();
+
+  for (size_t i = 0; i < HA_SENSOR_SLOT_COUNT; ++i) {
+    uint8_t row = (i < 3) ? 0 : 1;
+    uint8_t col = i % 3;
+    const String& entity = cfg.sensor_slots[i];
+    bool changed = (entity != g_sensor_entities[i]);
+    g_sensor_entities[i] = entity;
+    if (!entity.length()) {
+      g_sensor_cache[i] = "";
+      g_sensor_units[i] = "";
+      continue;
+    }
+    if (changed) {
+      g_sensor_cache[i] = "--";
+    }
+    if (changed || !g_sensor_cache[i].length() || g_sensor_cache[i] == "--") {
+      String initial = haBridgeConfig.findSensorInitialValue(entity);
+      if (initial.length()) {
+        g_sensor_cache[i] = sanitize_sensor_value(initial);
+      }
+    }
+    if (!g_sensor_cache[i].length()) {
+      g_sensor_cache[i] = "--";
+    }
+    String title = cfg.sensor_titles[i];
+    if (!title.length()) {
+      title = haBridgeConfig.findSensorName(entity);
+    }
+    if (!title.length()) {
+      title = make_display_label(entity, true);
+    }
+    const char* current = g_sensor_cache[i].c_str();
+    String unit = cfg.sensor_custom_units[i];
+    if (!unit.length()) {
+      unit = haBridgeConfig.findSensorUnit(entity);
+    }
+    g_sensor_units[i] = unit;
+    g_sensor_tiles[i] = make_sensor_card(g_home_grid, col, row, title.c_str(), current, unit.c_str());
   }
-  if (g_lbl_soc) {
-    char b3[8];
-    snprintf(b3, sizeof(b3), "%d", soc_pct);
-    lv_label_set_text(g_lbl_soc, b3);
+
+  for (size_t i = 0; i < HA_SCENE_SLOT_COUNT; ++i) {
+    uint8_t row = 2 + (i / 3);
+    uint8_t col = i % 3;
+    const String& alias = cfg.scene_slots[i];
+    g_scene_aliases[i] = alias;
+    if (!alias.length()) {
+      continue;
+    }
+    String title = cfg.scene_titles[i];
+    if (!title.length()) {
+      title = make_display_label(alias, false);
+    }
+    make_scene_button(g_home_grid, col, row, title.c_str(), static_cast<uint8_t>(i));
   }
 }
 
-void home_set_wohn_temp(float celsius) {
-  if (g_lbl_wohn) {
-    char buf[16];
-    dtostrf(celsius, 0, 1, buf);
-    lv_label_set_text(g_lbl_wohn, buf);
-  }
-}
-
-void home_set_pv_garage(float watts) {
-  if (g_lbl_pv) {
-    char buf[16];
-    // typische PV-Leistung als ganze Watt anzeigen
-    snprintf(buf, sizeof(buf), "%d", (int)roundf(watts));
-    lv_label_set_text(g_lbl_pv, buf);
+void home_set_sensor_slot_value(uint8_t slot, const char* value) {
+  if (slot >= HA_SENSOR_SLOT_COUNT) return;
+  String sanitized = sanitize_sensor_value(value ? String(value) : String());
+  sanitized = format_sensor_value(slot, sanitized);
+  g_sensor_cache[slot] = sanitized;
+  if (g_sensor_tiles[slot].value_label) {
+    lv_label_set_text(g_sensor_tiles[slot].value_label, sanitized.c_str());
   }
 }

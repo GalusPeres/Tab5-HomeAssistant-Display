@@ -95,6 +95,8 @@ void WebConfigServer::handleSave() {
   } else {
     memset(&cfg, 0, sizeof(cfg));
     cfg.mqtt_port = 1883;  // Default
+    strncpy(cfg.mqtt_base_topic, "tab5", CONFIG_MQTT_BASE_MAX - 1);
+    strncpy(cfg.ha_prefix, "ha/statestream", CONFIG_HA_PREFIX_MAX - 1);
   }
 
   // Überschreibe nur WiFi-Daten

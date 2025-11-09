@@ -1,6 +1,8 @@
 #include "network_manager.h"
 #include "config_manager.h"
 #include "mqtt_handlers.h"
+#include "mqtt_topics.h"
+#include "ha_bridge_config.h"
 #include "web_admin.h"
 #include "ui_manager.h"
 #include "tab_settings.h"
@@ -8,9 +10,11 @@
 // Globale Instanz
 Tab5NetworkManager networkManager;
 
-// MQTT Topics
-const char* Tab5NetworkManager::TP_STAT_CONN = "tab5/stat/connected";
-const char* Tab5NetworkManager::TP_TELE_UP = "tab5/tele/uptime";
+static void buildDeviceId(char* buffer, size_t len) {
+  if (!buffer || !len) return;
+  uint64_t mac = ESP.getEfuseMac();
+  snprintf(buffer, len, "tab5_lvgl_%04X", (uint16_t)(mac & 0xFFFF));
+}
 
 // ========== Initialisierung ==========
 void Tab5NetworkManager::init() {
@@ -69,17 +73,33 @@ void Tab5NetworkManager::connectMqtt() {
 
   char client_id[48];
   uint64_t mac = ESP.getEfuseMac();
-  snprintf(client_id, sizeof(client_id), "Tab5_LVGL-%04X", (uint16_t)(mac & 0xFFFF));
+  uint16_t short_id = (uint16_t)(mac & 0xFFFF);
+  snprintf(client_id, sizeof(client_id), "Tab5_LVGL-%04X", short_id);
+
+  char did[24];
+  buildDeviceId(did, sizeof(did));
+  bridge_apply_topic_ = "tab5_lvgl/config/";
+  bridge_apply_topic_ += did;
+  bridge_apply_topic_ += "/bridge/apply";
+
+  bridge_request_topic_ = "tab5_lvgl/config/";
+  bridge_request_topic_ += did;
+  bridge_request_topic_ += "/bridge/request";
 
   Serial.printf("MQTT: Verbinde mit %s:%u als %s\n", cfg.mqtt_host, cfg.mqtt_port, client_id);
+
+  const char* stat_topic = mqttTopics.topic(TopicKey::STAT_CONN);
+  if (!stat_topic || !*stat_topic) {
+    stat_topic = "tab5/stat/connected";
+  }
 
   bool ok = false;
   if (cfg.mqtt_user && cfg.mqtt_user[0]) {
     ok = mqtt_client.connect(client_id, cfg.mqtt_user, cfg.mqtt_pass,
-                             TP_STAT_CONN, 0, true, "0");
+                             stat_topic, 0, true, "0");
   } else {
     ok = mqtt_client.connect(client_id, nullptr, nullptr,
-                             TP_STAT_CONN, 0, true, "0");
+                             stat_topic, 0, true, "0");
   }
 
   if (!ok) {
@@ -90,9 +110,15 @@ void Tab5NetworkManager::connectMqtt() {
   Serial.println("✓ MQTT verbunden");
 
   // Connected - Status publizieren und Topics subscriben
-  mqtt_client.publish(TP_STAT_CONN, "1", true);
+  mqtt_client.publish(stat_topic, "1", true);
   mqttSubscribeTopics();
+  if (!bridge_apply_topic_.isEmpty()) {
+    mqtt_client.subscribe(bridge_apply_topic_.c_str());
+    Serial.printf("[MQTT] Listening for bridge config on %s\n", bridge_apply_topic_.c_str());
+  }
   mqttPublishDiscovery();
+  publishBridgeConfig();
+  publishBridgeRequest();
 }
 
 // ========== WiFi-Status ==========
@@ -118,8 +144,43 @@ void Tab5NetworkManager::publishTelemetry() {
     last_telemetry = now;
     char buf[16];
     snprintf(buf, sizeof(buf), "%lu", (unsigned long)(now / 1000UL));
-    mqtt_client.publish(TP_TELE_UP, buf, true);
+    const char* tele_topic = mqttTopics.topic(TopicKey::TELE_UP);
+    if (tele_topic && *tele_topic) {
+      mqtt_client.publish(tele_topic, buf, true);
+    }
   }
+}
+
+void Tab5NetworkManager::publishBridgeConfig() {
+  if (!mqtt_client.connected()) return;
+  if (!configManager.isConfigured()) return;
+
+  const DeviceConfig& cfg = configManager.getConfig();
+  char did[24];
+  buildDeviceId(did, sizeof(did));
+  String payload = haBridgeConfig.buildJsonPayload(did, cfg.mqtt_base_topic, cfg.ha_prefix);
+  if (payload.isEmpty()) return;
+
+  String topic = "tab5_lvgl/config/";
+  topic += did;
+  topic += "/bridge";
+  mqtt_client.publish(topic.c_str(), payload.c_str(), true);
+  Serial.println("[Network] Home Assistant Bridge-Konfiguration publiziert");
+}
+
+const char* Tab5NetworkManager::getBridgeApplyTopic() const {
+  return bridge_apply_topic_.length() ? bridge_apply_topic_.c_str() : nullptr;
+}
+
+void Tab5NetworkManager::publishBridgeRequest() {
+  if (!mqtt_client.connected()) return;
+  if (bridge_request_topic_.isEmpty()) return;
+  mqtt_client.publish(bridge_request_topic_.c_str(), "", false);
+  Serial.println("[Network] Home Assistant Bridge-Aktualisierung angefordert");
+}
+
+const char* Tab5NetworkManager::getBridgeRequestTopic() const {
+  return bridge_request_topic_.length() ? bridge_request_topic_.c_str() : nullptr;
 }
 
 // ========== Update-Schleife ==========
@@ -169,3 +230,4 @@ void Tab5NetworkManager::update() {
   // WiFi-Status für nächste Runde merken
   was_connected = is_connected;
 }
+

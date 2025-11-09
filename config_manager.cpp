@@ -11,6 +11,8 @@ ConfigManager::ConfigManager() {
   memset(&config, 0, sizeof(config));
   config.configured = false;
   config.mqtt_port = 1883;  // Default MQTT Port
+  strncpy(config.mqtt_base_topic, "tab5", CONFIG_MQTT_BASE_MAX - 1);
+  strncpy(config.ha_prefix, "ha/statestream", CONFIG_HA_PREFIX_MAX - 1);
 }
 
 bool ConfigManager::load() {
@@ -37,6 +39,15 @@ bool ConfigManager::load() {
   config.mqtt_port = prefs.getUShort("mqtt_port", 1883);
   prefs.getString("mqtt_user", config.mqtt_user, CONFIG_MQTT_USER_MAX);
   prefs.getString("mqtt_pass", config.mqtt_pass, CONFIG_MQTT_PASS_MAX);
+  prefs.getString("mqtt_base", config.mqtt_base_topic, CONFIG_MQTT_BASE_MAX);
+  prefs.getString("ha_prefix", config.ha_prefix, CONFIG_HA_PREFIX_MAX);
+
+  if (config.mqtt_base_topic[0] == '\0') {
+    strncpy(config.mqtt_base_topic, "tab5", CONFIG_MQTT_BASE_MAX - 1);
+  }
+  if (config.ha_prefix[0] == '\0') {
+    strncpy(config.ha_prefix, "ha/statestream", CONFIG_HA_PREFIX_MAX - 1);
+  }
 
   prefs.end();
 
@@ -63,6 +74,8 @@ bool ConfigManager::save(const DeviceConfig& cfg) {
   prefs.putUShort("mqtt_port", cfg.mqtt_port);
   prefs.putString("mqtt_user", cfg.mqtt_user);
   prefs.putString("mqtt_pass", cfg.mqtt_pass);
+  prefs.putString("mqtt_base", cfg.mqtt_base_topic);
+  prefs.putString("ha_prefix", cfg.ha_prefix);
   prefs.putBool("configured", true);
 
   prefs.end();
@@ -92,6 +105,8 @@ void ConfigManager::clear() {
   memset(&config, 0, sizeof(config));
   config.configured = false;
   config.mqtt_port = 1883;
+  strncpy(config.mqtt_base_topic, "tab5", CONFIG_MQTT_BASE_MAX - 1);
+  strncpy(config.ha_prefix, "ha/statestream", CONFIG_HA_PREFIX_MAX - 1);
 
   Serial.println("✓ ConfigManager: Konfiguration gelöscht");
 }

@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <WebServer.h>
 #include "config_manager.h"
+#include "ha_bridge_config.h"
 
 // Webinterface für MQTT-Konfiguration im normalen Netzwerk
 // Läuft wenn das Gerät bereits mit WiFi verbunden ist
@@ -29,12 +30,15 @@ private:
   // Request Handler
   void handleRoot();
   void handleSaveMQTT();
+  void handleSaveBridge();
+  void handleBridgeRefresh();
   void handleStatus();
   void handleRestart();
 
   // HTML-Seiten
   String getAdminPage();
   String getSuccessPage();
+  String getBridgeSuccessPage();
   String getStatusJSON();
 };
 

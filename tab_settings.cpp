@@ -167,8 +167,6 @@ void build_settings_tab(lv_obj_t *tab, hotspot_callback_t hotspot_cb) {
   lv_slider_set_range(slider, 0, 255);
   lv_slider_set_value(slider, 200, LV_ANIM_OFF);
   lv_obj_add_event_cb(slider, on_brightness, LV_EVENT_VALUE_CHANGED, nullptr);
-  lv_obj_set_style_bg_color(slider, lv_color_hex(0x667eea), LV_PART_INDICATOR);
-  lv_obj_set_style_bg_color(slider, lv_color_hex(0x764ba2), LV_PART_KNOB);
 }
 
 // Update WiFi Status von außen (wird von main loop aufgerufen)

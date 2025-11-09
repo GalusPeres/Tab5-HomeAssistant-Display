@@ -1,95 +1,196 @@
 #include "mqtt_handlers.h"
+#include "mqtt_topics.h"
 #include "network_manager.h"
+#include "ha_bridge_config.h"
 #include "tab_home.h"
 #include "tab_solar.h"
 #include <PubSubClient.h>
+#include <algorithm>
+#include <vector>
 
-// ========== MQTT Topics ==========
-namespace MqttTopics {
-  const char* SENSOR_OUT = "tab5/sensor/outside_c";
-  const char* SENSOR_IN = "tab5/sensor/inside_c";
-  const char* SENSOR_SOC = "tab5/sensor/soc_pct";
-  const char* SCENE_CMND = "tab5/cmnd/scene";
-  const char* STAT_CONN = "tab5/stat/connected";
-  const char* TELE_UP = "tab5/tele/uptime";
-  const char* HA_WOHN_TEMP = "ha/statestream/sensor/og_wohnbereich_sensor_temperatur/state";
-  const char* HA_PV_GARAGE = "ha/statestream/sensor/pv_haus_garage/state";
-  const char* HA_PV_GARAGE_HISTORY = "ha/statestream/sensor/pv_haus_garage/history";
-}
-
-// Cached values
+// Cached values for outgoing snapshots
 static float g_outside_c = 21.7f;
 static float g_inside_c = 22.4f;
 static int g_soc_pct = 73;
 
+using RouteHandler = void (*)(const char* payload, size_t len);
+
+struct TopicRoute {
+  TopicKey key;
+  RouteHandler handler;
+  bool use_large_buffer;
+};
+
+struct DynamicSensorRoute {
+  String topic;
+  std::vector<uint8_t> slots;
+};
+
+static std::vector<DynamicSensorRoute> g_dynamic_routes;
+
+static void handleOutside(const char* payload, size_t) {
+  g_outside_c = atof(payload);
+}
+
+static void handleInside(const char* payload, size_t) {
+  g_inside_c = atof(payload);
+}
+
+static void handleSoc(const char* payload, size_t) {
+  g_soc_pct = atoi(payload);
+}
+
+static void handleSceneCommand(const char* payload, size_t) {
+  Serial.printf("Scene command received: %s\n", payload);
+}
+
+static void handleHaWohnTemp(const char* payload, size_t) {
+  float v = atof(payload);
+  Serial.printf("HA Wohnbereich Temperatur: %s -> %.2f C\n", payload, v);
+}
+
+static void handleHaPvGarage(const char* payload, size_t) {
+  float v = atof(payload);
+  Serial.printf("HA PV Garage: %s -> %.0f W\n", payload, v);
+  solar_update_power(v);
+}
+
+static void handlePvHistory(const char* payload, size_t len) {
+  Serial.printf("HA PV Garage History: %u bytes\n", static_cast<unsigned>(len));
+  solar_set_history_csv(payload);
+}
+
+static const TopicRoute kRoutes[] = {
+  {TopicKey::SENSOR_OUT, handleOutside, false},
+  {TopicKey::SENSOR_IN, handleInside, false},
+  {TopicKey::SENSOR_SOC, handleSoc, false},
+  {TopicKey::SCENE_CMND, handleSceneCommand, false},
+  {TopicKey::HA_WOHN_TEMP, handleHaWohnTemp, false},
+  {TopicKey::HA_PV_GARAGE, handleHaPvGarage, false},
+  {TopicKey::HA_PV_GARAGE_HISTORY, handlePvHistory, true},
+};
+
+static String buildHaStatestreamTopic(const String& entity_id) {
+  String topic = mqttTopics.haPrefix();
+  if (!topic.length()) {
+    topic = "ha/statestream";
+  }
+  topic += "/";
+  for (size_t i = 0; i < entity_id.length(); ++i) {
+    char c = entity_id.charAt(i);
+    topic += (c == '.') ? '/' : c;
+  }
+  topic += "/state";
+  return topic;
+}
+
+static void rebuildDynamicRoutes(std::vector<DynamicSensorRoute>& routes) {
+  routes.clear();
+  const HaBridgeConfigData& cfg = haBridgeConfig.get();
+  for (uint8_t slot = 0; slot < HA_SENSOR_SLOT_COUNT; ++slot) {
+    const String& entity = cfg.sensor_slots[slot];
+    if (!entity.length()) {
+      continue;
+    }
+    String topic = buildHaStatestreamTopic(entity);
+    auto it = std::find_if(
+        routes.begin(),
+        routes.end(),
+        [&](const DynamicSensorRoute& r) { return r.topic == topic; });
+    if (it == routes.end()) {
+      DynamicSensorRoute route;
+      route.topic = topic;
+      route.slots.push_back(slot);
+      routes.push_back(route);
+    } else {
+      it->slots.push_back(slot);
+    }
+  }
+}
+
+static bool tryHandleDynamicSensor(const char* topic, const char* payload) {
+  for (const auto& route : g_dynamic_routes) {
+    if (route.topic == topic) {
+      for (uint8_t slot : route.slots) {
+        home_set_sensor_slot_value(slot, payload);
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+static constexpr size_t SMALL_BUF = 96;
+static constexpr size_t LARGE_BUF = 4096;
+static char small_buf[SMALL_BUF];
+static char large_buf[LARGE_BUF];
+
 // ========== MQTT Callback (Topic-Routing) ==========
 void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
-  // Check if this is the PV history topic (needs large buffer)
-  if (strcmp(topic, MqttTopics::HA_PV_GARAGE_HISTORY) == 0) {
-    // Allocate buffer for CSV history data
-    static char history_buf[4000];
-    length = (length < sizeof(history_buf)-1) ? length : (sizeof(history_buf)-1);
-    memcpy(history_buf, payload, length);
-    history_buf[length] = '\0';
-
-    Serial.println("═══════════════════════════════════════");
-    Serial.printf("📥 HA PV Garage History: %d bytes empfangen\n", length);
-    Serial.printf("📝 Erste 200 Zeichen: %.200s\n", history_buf);
-    Serial.println("═══════════════════════════════════════");
-
-    solar_set_history_csv(history_buf);
+  const char* apply_topic = networkManager.getBridgeApplyTopic();
+  if (apply_topic && strcmp(topic, apply_topic) == 0) {
+    static char cfg_buf[1200];
+    size_t copy_len = length < sizeof(cfg_buf) - 1 ? length : sizeof(cfg_buf) - 1;
+    memcpy(cfg_buf, payload, copy_len);
+    cfg_buf[copy_len] = '\0';
+    Serial.printf("[Bridge] apply-topic hit (%u bytes)\n", (unsigned)copy_len);
+    Serial.printf("[Bridge] payload: %s\n", cfg_buf);
+    if (haBridgeConfig.applyJson(cfg_buf)) {
+      Serial.println("[Bridge] Konfiguration von HA empfangen");
+      networkManager.publishBridgeConfig();
+      home_reload_layout();
+      mqttReloadDynamicSlots();
+    } else {
+      Serial.println("[Bridge] Ungueltige Bridge-Konfiguration empfangen");
+    }
     return;
   }
 
-  // Make a zero-terminated copy for regular messages
-  char msg[64];
-  length = (length < sizeof(msg)-1) ? length : (sizeof(msg)-1);
-  memcpy(msg, payload, length);
-  msg[length] = '\0';
+  bool processed_static = false;
+  for (const auto& route : kRoutes) {
+    const char* expected = mqttTopics.topic(route.key);
+    if (!expected || strcmp(topic, expected) != 0) {
+      continue;
+    }
 
-  // Route by topic
-  if (strcmp(topic, MqttTopics::SENSOR_OUT) == 0) {
-    g_outside_c = atof(msg);
-    home_set_values(g_outside_c, g_inside_c, g_soc_pct);
+    char* buf = route.use_large_buffer ? large_buf : small_buf;
+    size_t buf_len = route.use_large_buffer ? sizeof(large_buf) : sizeof(small_buf);
+    size_t copy_len = length < (buf_len - 1) ? length : (buf_len - 1);
+    memcpy(buf, payload, copy_len);
+    buf[copy_len] = '\0';
+
+    route.handler(buf, copy_len);
+    processed_static = true;
+    break;
   }
-  else if (strcmp(topic, MqttTopics::SENSOR_IN) == 0) {
-    g_inside_c = atof(msg);
-    home_set_values(g_outside_c, g_inside_c, g_soc_pct);
+
+  // Dynamische Sensor-Slots pruefen
+  size_t copy_len = length < (SMALL_BUF - 1) ? length : (SMALL_BUF - 1);
+  memcpy(small_buf, payload, copy_len);
+  small_buf[copy_len] = '\0';
+  if (tryHandleDynamicSensor(topic, small_buf)) {
+    return;
   }
-  else if (strcmp(topic, MqttTopics::SENSOR_SOC) == 0) {
-    g_soc_pct = atoi(msg);
-    home_set_values(g_outside_c, g_inside_c, g_soc_pct);
+
+  if (processed_static) {
+    return;
   }
-  else if (strcmp(topic, MqttTopics::SCENE_CMND) == 0) {
-    Serial.printf("Scene command: %s\n", msg);
-    // TODO: Optionally trigger UI feedback or actions
-  }
-  else if (strcmp(topic, MqttTopics::HA_WOHN_TEMP) == 0) {
-    float v = atof(msg);
-    Serial.printf("HA Wohnbereich Temperatur: raw='%s' parsed=%.2f C\n", msg, v);
-    home_set_wohn_temp(v);
-  }
-  else if (strcmp(topic, MqttTopics::HA_PV_GARAGE) == 0) {
-    float v = atof(msg);
-    Serial.printf("HA PV Garage: raw='%s' parsed=%.0f W\n", msg, v);
-    home_set_pv_garage(v);
-    solar_update_power(v);
-  }
+
+  Serial.printf("MQTT: Unhandled topic %s\n", topic);
 }
 
 // ========== Subscribe zu Topics ==========
 void mqttSubscribeTopics() {
   PubSubClient& mqtt = networkManager.getMqttClient();
 
-  mqtt.subscribe(MqttTopics::SENSOR_OUT);
-  mqtt.subscribe(MqttTopics::SENSOR_IN);
-  mqtt.subscribe(MqttTopics::SENSOR_SOC);
-  mqtt.subscribe(MqttTopics::SCENE_CMND);
-  mqtt.subscribe(MqttTopics::HA_WOHN_TEMP);
-  mqtt.subscribe(MqttTopics::HA_PV_GARAGE);
-  mqtt.subscribe(MqttTopics::HA_PV_GARAGE_HISTORY);
+  for (const auto& route : kRoutes) {
+    const char* tpc = mqttTopics.topic(route.key);
+    if (!tpc || !*tpc) continue;
+    mqtt.subscribe(tpc);
+    Serial.printf("MQTT: subscribed %s\n", tpc);
+  }
 
-  Serial.println("✓ MQTT Topics subscribed");
+  mqttReloadDynamicSlots();
 }
 
 // ========== Home Snapshot publizieren ==========
@@ -99,13 +200,13 @@ void mqttPublishHomeSnapshot() {
 
   char buf[24];
   dtostrf(g_outside_c, 0, 1, buf);
-  mqtt.publish(MqttTopics::SENSOR_OUT, buf, true);
+  mqtt.publish(mqttTopics.topic(TopicKey::SENSOR_OUT), buf, true);
 
   dtostrf(g_inside_c, 0, 1, buf);
-  mqtt.publish(MqttTopics::SENSOR_IN, buf, true);
+  mqtt.publish(mqttTopics.topic(TopicKey::SENSOR_IN), buf, true);
 
   snprintf(buf, sizeof(buf), "%d", g_soc_pct);
-  mqtt.publish(MqttTopics::SENSOR_SOC, buf, true);
+  mqtt.publish(mqttTopics.topic(TopicKey::SENSOR_SOC), buf, true);
 }
 
 // ========== Scene Command publizieren ==========
@@ -114,11 +215,11 @@ void mqttPublishScene(const char* scene_name) {
 
   PubSubClient& mqtt = networkManager.getMqttClient();
   if (!mqtt.connected()) {
-    Serial.printf("Scene command übersprungen (MQTT offline): %s\n", scene_name);
+    Serial.printf("Scene command skipped (MQTT offline): %s\n", scene_name);
     return;
   }
 
-  bool ok = mqtt.publish(MqttTopics::SCENE_CMND, scene_name, false);
+  bool ok = mqtt.publish(mqttTopics.topic(TopicKey::SCENE_CMND), scene_name, false);
   Serial.printf("Scene command -> MQTT '%s' (%s)\n", scene_name, ok ? "ok" : "fail");
 }
 
@@ -127,9 +228,8 @@ void mqttPublishDiscovery() {
   PubSubClient& mqtt = networkManager.getMqttClient();
   if (!mqtt.connected()) return;
 
-  Serial.println("📡 Publiziere Home Assistant Discovery...");
+  Serial.println("Publishing Home Assistant discovery payloads...");
 
-  // Build device ID based on MAC
   char did[24];
   uint64_t mac = ESP.getEfuseMac();
   snprintf(did, sizeof(did), "tab5_lvgl_%04X", (uint16_t)(mac & 0xFFFF));
@@ -137,52 +237,65 @@ void mqttPublishDiscovery() {
   char tpc[96];
   char js[256];
 
-  // Outside temperature
+  const char* stat_topic = mqttTopics.topic(TopicKey::STAT_CONN);
+
   snprintf(tpc, sizeof(tpc), "homeassistant/sensor/%s_outside_c/config", did);
   snprintf(js, sizeof(js),
     "{\"name\":\"Tab5 Outside\",\"stat_t\":\"%s\",\"unit_of_meas\":\"°C\",\"dev_cla\":\"temperature\",\"stat_cla\":\"measurement\",\"uniq_id\":\"%s_out\",\"avty_t\":\"%s\",\"pl_avail\":\"1\",\"pl_not_avail\":\"0\",\"dev\":{\"ids\":[\"%s\"],\"name\":\"Tab5 LVGL\",\"mf\":\"M5Stack\",\"mdl\":\"Tab5\"}}",
-    MqttTopics::SENSOR_OUT, did, MqttTopics::STAT_CONN, did);
+    mqttTopics.topic(TopicKey::SENSOR_OUT), did, stat_topic, did);
   mqtt.publish(tpc, js, true);
 
-  // Inside temperature
   snprintf(tpc, sizeof(tpc), "homeassistant/sensor/%s_inside_c/config", did);
   snprintf(js, sizeof(js),
     "{\"name\":\"Tab5 Inside\",\"stat_t\":\"%s\",\"unit_of_meas\":\"°C\",\"dev_cla\":\"temperature\",\"stat_cla\":\"measurement\",\"uniq_id\":\"%s_in\",\"avty_t\":\"%s\",\"pl_avail\":\"1\",\"pl_not_avail\":\"0\",\"dev\":{\"ids\":[\"%s\"],\"name\":\"Tab5 LVGL\",\"mf\":\"M5Stack\",\"mdl\":\"Tab5\"}}",
-    MqttTopics::SENSOR_IN, did, MqttTopics::STAT_CONN, did);
+    mqttTopics.topic(TopicKey::SENSOR_IN), did, stat_topic, did);
   mqtt.publish(tpc, js, true);
 
-  // Battery SoC
   snprintf(tpc, sizeof(tpc), "homeassistant/sensor/%s_soc_pct/config", did);
   snprintf(js, sizeof(js),
     "{\"name\":\"Tab5 Battery SoC\",\"stat_t\":\"%s\",\"unit_of_meas\":\"%%\",\"dev_cla\":\"battery\",\"stat_cla\":\"measurement\",\"uniq_id\":\"%s_soc\",\"avty_t\":\"%s\",\"pl_avail\":\"1\",\"pl_not_avail\":\"0\",\"dev\":{\"ids\":[\"%s\"],\"name\":\"Tab5 LVGL\",\"mf\":\"M5Stack\",\"mdl\":\"Tab5\"}}",
-    MqttTopics::SENSOR_SOC, did, MqttTopics::STAT_CONN, did);
+    mqttTopics.topic(TopicKey::SENSOR_SOC), did, stat_topic, did);
   mqtt.publish(tpc, js, true);
 
-  // Uptime
   snprintf(tpc, sizeof(tpc), "homeassistant/sensor/%s_uptime/config", did);
   snprintf(js, sizeof(js),
     "{\"name\":\"Tab5 Uptime\",\"stat_t\":\"%s\",\"unit_of_meas\":\"s\",\"uniq_id\":\"%s_up\",\"avty_t\":\"%s\",\"pl_avail\":\"1\",\"pl_not_avail\":\"0\",\"dev\":{\"ids\":[\"%s\"]}}",
-    MqttTopics::TELE_UP, did, MqttTopics::STAT_CONN, did);
+    mqttTopics.topic(TopicKey::TELE_UP), did, stat_topic, did);
   mqtt.publish(tpc, js, true);
 
-  // Scene Buttons
   snprintf(tpc, sizeof(tpc), "homeassistant/button/%s_scene_abend/config", did);
   snprintf(js, sizeof(js),
     "{\"name\":\"Tab5 Scene Abend\",\"cmd_t\":\"%s\",\"pl_prs\":\"Abend\",\"uniq_id\":\"%s_btn_abend\",\"avty_t\":\"%s\",\"pl_avail\":\"1\",\"pl_not_avail\":\"0\",\"dev\":{\"ids\":[\"%s\"]}}",
-    MqttTopics::SCENE_CMND, did, MqttTopics::STAT_CONN, did);
+    mqttTopics.topic(TopicKey::SCENE_CMND), did, stat_topic, did);
   mqtt.publish(tpc, js, true);
 
   snprintf(tpc, sizeof(tpc), "homeassistant/button/%s_scene_lesen/config", did);
   snprintf(js, sizeof(js),
     "{\"name\":\"Tab5 Scene Lesen\",\"cmd_t\":\"%s\",\"pl_prs\":\"Lesen\",\"uniq_id\":\"%s_btn_lesen\",\"avty_t\":\"%s\",\"pl_avail\":\"1\",\"pl_not_avail\":\"0\",\"dev\":{\"ids\":[\"%s\"]}}",
-    MqttTopics::SCENE_CMND, did, MqttTopics::STAT_CONN, did);
+    mqttTopics.topic(TopicKey::SCENE_CMND), did, stat_topic, did);
   mqtt.publish(tpc, js, true);
 
   snprintf(tpc, sizeof(tpc), "homeassistant/button/%s_scene_allesaus/config", did);
   snprintf(js, sizeof(js),
     "{\"name\":\"Tab5 Scene Alles Aus\",\"cmd_t\":\"%s\",\"pl_prs\":\"AllesAus\",\"uniq_id\":\"%s_btn_allesaus\",\"avty_t\":\"%s\",\"pl_avail\":\"1\",\"pl_not_avail\":\"0\",\"dev\":{\"ids\":[\"%s\"]}}",
-    MqttTopics::SCENE_CMND, did, MqttTopics::STAT_CONN, did);
+    mqttTopics.topic(TopicKey::SCENE_CMND), did, stat_topic, did);
   mqtt.publish(tpc, js, true);
 
-  Serial.println("✓ Home Assistant Discovery veröffentlicht");
+  Serial.println("Home Assistant discovery published");
+}
+
+void mqttReloadDynamicSlots() {
+  PubSubClient& mqtt = networkManager.getMqttClient();
+  if (mqtt.connected()) {
+    for (const auto& route : g_dynamic_routes) {
+      mqtt.unsubscribe(route.topic.c_str());
+    }
+  }
+  rebuildDynamicRoutes(g_dynamic_routes);
+  if (mqtt.connected()) {
+    for (const auto& route : g_dynamic_routes) {
+      mqtt.subscribe(route.topic.c_str());
+      Serial.printf("MQTT: subscribed %s\n", route.topic.c_str());
+    }
+  }
 }

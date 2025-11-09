@@ -14,6 +14,8 @@
 // Netzwerk-Module
 #include "network_manager.h"
 #include "mqtt_handlers.h"
+#include "ha_bridge_config.h"
+#include "mqtt_topics.h"
 
 // Konfigurations-Module
 #include "config_manager.h"
@@ -88,6 +90,14 @@ void setup() {
   // --- Konfiguration laden ---
   Serial.println("\n📋 Lade Konfiguration...");
   bool has_config = configManager.load();
+  haBridgeConfig.load();
+  TopicSettings topicSettings;
+  if (has_config) {
+    const DeviceConfig& cfg = configManager.getConfig();
+    topicSettings.device_base = cfg.mqtt_base_topic;
+    topicSettings.ha_prefix = cfg.ha_prefix;
+  }
+  mqttTopics.begin(topicSettings);
 
   if (!has_config) {
     Serial.println("⚠️ Keine WiFi/MQTT-Konfiguration gefunden!");

@@ -28,6 +28,10 @@ public:
 
   // Telemetrie
   void publishTelemetry();
+  void publishBridgeConfig();
+  void publishBridgeRequest();
+  const char* getBridgeApplyTopic() const;
+  const char* getBridgeRequestTopic() const;
 
 private:
   WiFiClient net_client;
@@ -37,10 +41,9 @@ private:
   uint32_t mqtt_retry_at = 0;
   uint32_t last_telemetry = 0;
   bool was_connected = false;
+  String bridge_apply_topic_;
+  String bridge_request_topic_;
 
-  // MQTT Topics (aus Config oder Default)
-  static const char* TP_STAT_CONN;
-  static const char* TP_TELE_UP;
 };
 
 // Globale Instanz
