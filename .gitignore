@@ -1,0 +1,16 @@
+# Claude Code lokale Einstellungen
+.claude/
+
+# Arduino Build-Artefakte
+*.bin
+*.elf
+*.hex
+*.map
+
+# IDE-Dateien
+.vscode/
+.idea/
+
+# Backup-Dateien
+*.bak
+*~
