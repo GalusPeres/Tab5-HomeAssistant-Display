@@ -18,10 +18,10 @@ void PowerManager::init() {
 
   is_high_performance = true;
 
-  Serial.printf("⚡ High-Performance: %d MHz, %d FPS, Helligkeit %d\n",
-                CPU_FREQ_HIGH, FPS_HIGH, BRIGHTNESS_HIGH);
-  Serial.printf("💤 Power-Saving: %d MHz, %d FPS, Helligkeit %d\n",
-                CPU_FREQ_LOW, FPS_LOW, BRIGHTNESS_LOW);
+  Serial.printf("⚡ High-Performance: %d MHz, %d FPS\n",
+                CPU_FREQ_HIGH, FPS_HIGH);
+  Serial.printf("💤 Power-Saving: %d MHz, %d FPS\n",
+                CPU_FREQ_LOW, FPS_LOW);
 }
 
 // ========== Performance-Modus setzen ==========
@@ -33,7 +33,6 @@ void PowerManager::setHighPerformance(bool enable) {
   if (enable) {
     // ULTRA-SCHNELL bei Touch!
     setCpuFrequencyMhz(CPU_FREQ_HIGH);
-    M5.Display.setBrightness(BRIGHTNESS_HIGH);
 
 #if LVGL_VERSION_MAJOR >= 9
     if (disp && lv_display_get_refr_timer) {
@@ -41,11 +40,10 @@ void PowerManager::setHighPerformance(bool enable) {
       if (rt) lv_timer_set_period(rt, 1000 / FPS_HIGH);  // 60 FPS
     }
 #endif
-    Serial.println("⚡ HIGH PERFORMANCE MODE");
+    Serial.println("⚡ HIGH PERFORMANCE MODE (CPU + FPS)");
 
   } else {
-    // Stromsparen bei Inaktivität
-    M5.Display.setBrightness(BRIGHTNESS_LOW);
+    // Stromsparen bei Inaktivität (nur CPU + FPS, Helligkeit bleibt unverändert)
     setCpuFrequencyMhz(CPU_FREQ_LOW);
 
 #if LVGL_VERSION_MAJOR >= 9
@@ -54,7 +52,7 @@ void PowerManager::setHighPerformance(bool enable) {
       if (rt) lv_timer_set_period(rt, 1000 / FPS_LOW);  // 10 FPS
     }
 #endif
-    Serial.println("💤 POWER SAVING MODE");
+    Serial.println("💤 POWER SAVING MODE (CPU + FPS)");
   }
 }
 

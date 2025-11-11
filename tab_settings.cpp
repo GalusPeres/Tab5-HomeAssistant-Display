@@ -10,6 +10,7 @@ static lv_obj_t *wifi_status_label = nullptr;
 static lv_obj_t *wifi_ssid_label = nullptr;
 static lv_obj_t *wifi_ip_label = nullptr;
 static lv_obj_t *ap_mode_btn = nullptr;
+static lv_obj_t *mqtt_notice_label = nullptr;
 static lv_obj_t *msgbox = nullptr;
 
 static void on_brightness(lv_event_t *e) {
@@ -76,7 +77,8 @@ void build_settings_tab(lv_obj_t *tab, hotspot_callback_t hotspot_cb) {
 
   // Scrollbares Container
   lv_obj_set_scroll_dir(tab, LV_DIR_VER);
-  lv_obj_set_style_bg_color(tab, lv_color_hex(0x111111), 0);
+  lv_obj_set_style_bg_color(tab, lv_color_hex(0x000000), 0);
+  lv_obj_set_style_bg_opa(tab, LV_OPA_COVER, 0);
   lv_obj_set_style_pad_all(tab, 20, 0);
 
   lv_obj_t *container = lv_obj_create(tab);
@@ -124,10 +126,21 @@ void build_settings_tab(lv_obj_t *tab, hotspot_callback_t hotspot_cb) {
   lv_obj_set_style_text_color(wifi_ip_label, lv_color_hex(0xC8C8C8), 0);
   lv_obj_align(wifi_ip_label, LV_ALIGN_TOP_LEFT, 0, 95);
 
+  mqtt_notice_label = lv_label_create(wifi_card);
+  lv_label_set_text(mqtt_notice_label,
+                    LV_SYMBOL_WARNING " MQTT nicht konfiguriert\n"
+                    "Oeffne das Web-Interface und trage Host & Zugangsdaten ein.");
+  lv_obj_set_width(mqtt_notice_label, LV_PCT(100));
+  lv_obj_set_style_text_font(mqtt_notice_label, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_color(mqtt_notice_label, lv_color_hex(0xFFC04D), 0);
+  lv_obj_set_style_text_align(mqtt_notice_label, LV_TEXT_ALIGN_LEFT, 0);
+  lv_obj_align(mqtt_notice_label, LV_ALIGN_TOP_LEFT, 0, 125);
+  lv_obj_add_flag(mqtt_notice_label, LV_OBJ_FLAG_HIDDEN);
+
   // AP-Modus Button
   ap_mode_btn = lv_button_create(wifi_card);
   lv_obj_set_size(ap_mode_btn, LV_PCT(100), 60);
-  lv_obj_align(ap_mode_btn, LV_ALIGN_TOP_LEFT, 0, 130);
+  lv_obj_align(ap_mode_btn, LV_ALIGN_TOP_LEFT, 0, 200);
   lv_obj_set_style_bg_color(ap_mode_btn, lv_color_hex(0xFF9800), 0);
   lv_obj_set_style_bg_color(ap_mode_btn, lv_color_hex(0xF57C00), LV_STATE_PRESSED);
   lv_obj_set_style_radius(ap_mode_btn, 8, 0);
@@ -164,7 +177,7 @@ void build_settings_tab(lv_obj_t *tab, hotspot_callback_t hotspot_cb) {
   lv_obj_t *slider = lv_slider_create(bright_card);
   lv_obj_set_size(slider, LV_PCT(100), 20);
   lv_obj_align(slider, LV_ALIGN_TOP_LEFT, 0, 75);
-  lv_slider_set_range(slider, 0, 255);
+  lv_slider_set_range(slider, 75, 255);
   lv_slider_set_value(slider, 200, LV_ANIM_OFF);
   lv_obj_add_event_cb(slider, on_brightness, LV_EVENT_VALUE_CHANGED, nullptr);
 }
@@ -192,5 +205,14 @@ void settings_update_wifi_status(bool connected, const char* ssid, const char* i
     lv_obj_set_style_text_color(wifi_status_label, lv_color_hex(0xFF6B6B), 0);
     lv_label_set_text(wifi_ssid_label, "Netzwerk: ---");
     lv_label_set_text(wifi_ip_label, "IP-Adresse: ---");
+  }
+}
+
+void settings_show_mqtt_warning(bool show) {
+  if (!mqtt_notice_label) return;
+  if (show) {
+    lv_obj_clear_flag(mqtt_notice_label, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    lv_obj_add_flag(mqtt_notice_label, LV_OBJ_FLAG_HIDDEN);
   }
 }

@@ -7,11 +7,9 @@
 // ========== Power Management Einstellungen ==========
 #define CPU_FREQ_HIGH       360   // Ultra-schnell bei Touch
 #define CPU_FREQ_LOW        80    // Stromsparen bei Inaktivität
-#define BRIGHTNESS_HIGH     150   // Hell bei Interaktion
-#define BRIGHTNESS_LOW      40    // Gedimmt bei Inaktivität
 #define FPS_HIGH            60    // 60 FPS für flüssige Bedienung
 #define FPS_LOW             10    // 10 FPS zum Stromsparen
-#define IDLE_TIMEOUT_MS     8000  // 8 Sekunden bis Idle-Modus
+#define IDLE_TIMEOUT_MS     0     // Sofort Stromsparen (kein Timeout)
 
 // Power Manager - Verwaltet Energiemodi und Performance
 class PowerManager {
