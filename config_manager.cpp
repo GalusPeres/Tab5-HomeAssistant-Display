@@ -52,6 +52,11 @@ bool ConfigManager::load() {
   config.auto_sleep_enabled = prefs.getBool("sleep_en", true);
   config.auto_sleep_minutes = prefs.getUShort("sleep_min", 1);
 
+  // Fallback: 0 Minuten korrigieren (kann durch ungültige Speicherung entstehen)
+  if (config.auto_sleep_minutes == 0) {
+    config.auto_sleep_minutes = 1;
+  }
+
   if (config.mqtt_base_topic[0] == '\0') {
     strncpy(config.mqtt_base_topic, "tab5", CONFIG_MQTT_BASE_MAX - 1);
   }
