@@ -95,6 +95,23 @@ void WebAdminServer::handleSaveBridge() {
       updated.sensor_custom_units[i] = unit;
       changed = true;
     }
+
+    // Farbe parsen (z.B. "#2A2A2A" → 0x2A2A2A)
+    String color_field = "sensor_color";
+    color_field += static_cast<int>(i);
+    String colorStr = server.hasArg(color_field) ? server.arg(color_field) : "";
+    colorStr.trim();
+
+    uint32_t color = 0;
+    if (colorStr.length() > 0 && colorStr[0] == '#') {
+      colorStr = colorStr.substring(1); // "#" entfernen
+      color = strtoul(colorStr.c_str(), nullptr, 16);
+    }
+
+    if (updated.sensor_colors[i] != color) {
+      updated.sensor_colors[i] = color;
+      changed = true;
+    }
   }
   for (size_t i = 0; i < HA_SCENE_SLOT_COUNT; ++i) {
     String field = "scene_slot";
@@ -111,6 +128,23 @@ void WebAdminServer::handleSaveBridge() {
     title.trim();
     if (updated.scene_titles[i] != title) {
       updated.scene_titles[i] = title;
+      changed = true;
+    }
+
+    // Farbe parsen (z.B. "#353535" → 0x353535)
+    String color_field = "scene_color";
+    color_field += static_cast<int>(i);
+    String colorStr = server.hasArg(color_field) ? server.arg(color_field) : "";
+    colorStr.trim();
+
+    uint32_t color = 0;
+    if (colorStr.length() > 0 && colorStr[0] == '#') {
+      colorStr = colorStr.substring(1); // "#" entfernen
+      color = strtoul(colorStr.c_str(), nullptr, 16);
+    }
+
+    if (updated.scene_colors[i] != color) {
+      updated.scene_colors[i] = color;
       changed = true;
     }
   }
@@ -184,6 +218,23 @@ void WebAdminServer::handleSaveGameControls() {
 
     if (updated.buttons[i].modifier != modifier) {
       updated.buttons[i].modifier = modifier;
+      changed = true;
+    }
+
+    // Farbe parsen (z.B. "#353535" → 0x353535)
+    String color_field = "game_color";
+    color_field += String((int)i);
+    String colorStr = server.hasArg(color_field) ? server.arg(color_field) : "";
+    colorStr.trim();
+
+    uint32_t color = 0;
+    if (colorStr.length() > 0 && colorStr[0] == '#') {
+      colorStr = colorStr.substring(1); // "#" entfernen
+      color = strtoul(colorStr.c_str(), nullptr, 16);
+    }
+
+    if (updated.buttons[i].color != color) {
+      updated.buttons[i].color = color;
       changed = true;
     }
   }

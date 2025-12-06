@@ -5,9 +5,9 @@
 
 /* === Layout-Konstanten === */
 static const int BUTTON_H = 150;
-static const int GAP = 22;
-static const int OUTER = 22;
-static const int GRID_PAD = 22;
+static const int GAP = 24;
+static const int OUTER = 0;
+static const int GRID_PAD = 24;
 
 /* === Fonts === */
 #if defined(LV_FONT_MONTSERRAT_28) && LV_FONT_MONTSERRAT_28
@@ -23,12 +23,18 @@ static lv_obj_t* g_game_grid = nullptr;
 
 /* === Helfer === */
 static lv_obj_t* make_game_button(lv_obj_t* parent, int col, int row,
-                                   const char* text, uint8_t slot) {
+                                   const char* text, uint8_t slot, uint32_t color) {
   lv_obj_t* btn = lv_button_create(parent);
   lv_obj_set_style_radius(btn, 18, 0);
   lv_obj_set_style_border_width(btn, 0, 0);
-  lv_obj_set_style_bg_color(btn, lv_color_hex(0x1E3A5F), LV_PART_MAIN | LV_STATE_DEFAULT);
-  lv_obj_set_style_bg_color(btn, lv_color_hex(0x2E4A6F), LV_PART_MAIN | LV_STATE_PRESSED);
+
+  // Farbe verwenden (Standard: 0x353535 wenn color = 0)
+  uint32_t btn_color = (color != 0) ? color : 0x353535;
+  lv_obj_set_style_bg_color(btn, lv_color_hex(btn_color), LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  // Pressed-State: 10% heller
+  uint32_t pressed_color = btn_color + 0x101010;
+  lv_obj_set_style_bg_color(btn, lv_color_hex(pressed_color), LV_PART_MAIN | LV_STATE_PRESSED);
   lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
   lv_obj_set_style_shadow_width(btn, 0, 0);
   lv_obj_set_height(btn, BUTTON_H);
@@ -129,10 +135,20 @@ void game_reload_layout() {
 
     const GameButton& button = cfg.buttons[i];
 
-    // Wenn keine Taste konfiguriert, leeren Button zeigen
-    String label = button.name.length() ? button.name : String("---");
-
-    make_game_button(g_game_grid, col, row, label.c_str(), static_cast<uint8_t>(i));
+    if (button.name.length() > 0) {
+      // Button erstellen wenn Name vorhanden
+      make_game_button(g_game_grid, col, row, button.name.c_str(),
+                       static_cast<uint8_t>(i), button.color);
+    } else {
+      // Leerer Platzhalter, damit Position blockiert bleibt
+      lv_obj_t* placeholder = lv_obj_create(g_game_grid);
+      lv_obj_set_style_bg_opa(placeholder, LV_OPA_TRANSP, 0);
+      lv_obj_set_style_border_width(placeholder, 0, 0);
+      lv_obj_set_height(placeholder, BUTTON_H);
+      lv_obj_set_grid_cell(placeholder,
+          LV_GRID_ALIGN_STRETCH, col, 1,
+          LV_GRID_ALIGN_STRETCH, row, 1);
+    }
   }
 
   Serial.println("[Game] Layout neu geladen");

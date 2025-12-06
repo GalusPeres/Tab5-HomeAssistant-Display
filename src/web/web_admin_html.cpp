@@ -279,6 +279,22 @@ String WebAdminServer::getAdminPage() {
       html += "\">";
     }
 
+    // Color Picker
+    html += "<div style=\"margin-top:12px;\"><label style=\"font-size:12px;color:#64748b;margin-bottom:4px;display:block;\">Farbe:</label><input type=\"color\" name=\"";
+    html += sensor ? "sensor_color" : "scene_color";
+    html += String((int)index);
+    html += "\" value=\"#";
+
+    // Aktuelle Farbe anzeigen (oder Standard)
+    uint32_t current_color = sensor ? ha.sensor_colors[index] : ha.scene_colors[index];
+    if (current_color == 0) {
+      current_color = sensor ? 0x2A2A2A : 0x353535;  // Standard-Farben
+    }
+    char colorHex[7];
+    snprintf(colorHex, sizeof(colorHex), "%06X", (unsigned int)current_color);
+    html += colorHex;
+    html += "\" style=\"width:100%;height:40px;cursor:pointer;\"></div>";
+
     html += "</div>";
   };
 
@@ -347,7 +363,19 @@ String WebAdminServer::getAdminPage() {
     }
 
     appendHtmlEscaped(html, currentMacro);
-    html += "\"><div style=\"margin-top:6px;font-size:11px;color:#64748b;\">Beispiele: g, ctrl+g, ctrl+shift+a, space, enter</div></div>";
+    html += "\"><div style=\"margin-top:6px;font-size:11px;color:#64748b;\">Beispiele: g, ctrl+g, ctrl+shift+a, space, enter</div>";
+
+    // Color Picker
+    html += "<div style=\"margin-top:12px;\"><label style=\"font-size:12px;color:#64748b;margin-bottom:4px;display:block;\">Farbe:</label><input type=\"color\" name=\"game_color";
+    html += String((int)i);
+    html += "\" value=\"#";
+
+    // Aktuelle Farbe anzeigen (oder Standard)
+    uint32_t btn_color = (gameData.buttons[i].color != 0) ? gameData.buttons[i].color : 0x353535;
+    char colorHex[7];
+    snprintf(colorHex, sizeof(colorHex), "%06X", (unsigned int)btn_color);
+    html += colorHex;
+    html += "\" style=\"width:100%;height:40px;cursor:pointer;\"></div></div>";
   }
 
   html += R"html(

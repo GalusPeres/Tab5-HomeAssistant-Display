@@ -7,11 +7,10 @@
 #include "src/core/config_manager.h"
 
 /* === Layout-Konstanten === */
-static const int SENSOR_CARD_H = 175;
-static const int SCENE_BTN_H = 130;
-static const int GAP = 22;
+static const int CARD_H = 150;  // Einheitliche Höhe für alle Kacheln
+static const int GAP = 24;
 static const int OUTER = 0;
-static const int GRID_PAD = 22;
+static const int GRID_PAD = 24;
 
 /* === Fonts === */
 #if defined(LV_FONT_MONTSERRAT_24) && LV_FONT_MONTSERRAT_24
@@ -124,16 +123,19 @@ static String format_sensor_value(uint8_t slot, const String& raw) {
 
 static SensorTileWidgets make_sensor_card(lv_obj_t* parent, int col, int row,
                                           const char* title, const char* value,
-                                          const char* unit) {
+                                          const char* unit, uint32_t color) {
   lv_obj_t* card = lv_obj_create(parent);
-  lv_obj_set_style_bg_color(card, lv_color_hex(0x2A2A2A), 0);
+
+  // Farbe verwenden (Standard: 0x2A2A2A wenn color = 0)
+  uint32_t card_color = (color != 0) ? color : 0x2A2A2A;
+  lv_obj_set_style_bg_color(card, lv_color_hex(card_color), 0);
   lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
   lv_obj_set_style_radius(card, 22, 0);
   lv_obj_set_style_border_width(card, 0, 0);
   lv_obj_set_style_shadow_width(card, 0, 0);
   lv_obj_set_style_pad_hor(card, 20, 0);
   lv_obj_set_style_pad_ver(card, 24, 0);
-  lv_obj_set_height(card, SENSOR_CARD_H);
+  lv_obj_set_height(card, CARD_H);
   lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_set_grid_cell(card,
@@ -161,15 +163,21 @@ static SensorTileWidgets make_sensor_card(lv_obj_t* parent, int col, int row,
 }
 
 static lv_obj_t* make_scene_button(lv_obj_t* parent, int col, int row,
-                                   const char* text, uint8_t slot) {
+                                   const char* text, uint8_t slot, uint32_t color) {
   lv_obj_t* btn = lv_button_create(parent);
   lv_obj_set_style_radius(btn, 18, 0);
   lv_obj_set_style_border_width(btn, 0, 0);
-  lv_obj_set_style_bg_color(btn, lv_color_hex(0x353535), LV_PART_MAIN | LV_STATE_DEFAULT);
-  lv_obj_set_style_bg_color(btn, lv_color_hex(0x454545), LV_PART_MAIN | LV_STATE_PRESSED);
+
+  // Farbe verwenden (Standard: 0x353535 wenn color = 0)
+  uint32_t btn_color = (color != 0) ? color : 0x353535;
+  lv_obj_set_style_bg_color(btn, lv_color_hex(btn_color), LV_PART_MAIN | LV_STATE_DEFAULT);
+
+  // Pressed-State: 10% heller
+  uint32_t pressed_color = btn_color + 0x101010;
+  lv_obj_set_style_bg_color(btn, lv_color_hex(pressed_color), LV_PART_MAIN | LV_STATE_PRESSED);
   lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
   lv_obj_set_style_shadow_width(btn, 0, 0);
-  lv_obj_set_height(btn, SCENE_BTN_H);
+  lv_obj_set_height(btn, CARD_H);
   lv_obj_remove_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_set_grid_cell(btn,
@@ -296,6 +304,14 @@ void home_reload_layout() {
     if (!entity.length()) {
       g_sensor_cache[i] = "";
       g_sensor_units[i] = "";
+      // Leerer Platzhalter, damit Position blockiert bleibt
+      lv_obj_t* placeholder = lv_obj_create(g_home_grid);
+      lv_obj_set_style_bg_opa(placeholder, LV_OPA_TRANSP, 0);
+      lv_obj_set_style_border_width(placeholder, 0, 0);
+      lv_obj_set_height(placeholder, CARD_H);
+      lv_obj_set_grid_cell(placeholder,
+          LV_GRID_ALIGN_STRETCH, col, 1,
+          LV_GRID_ALIGN_STRETCH, row, 1);
       continue;
     }
     if (changed) {
@@ -323,7 +339,7 @@ void home_reload_layout() {
       unit = haBridgeConfig.findSensorUnit(entity);
     }
     g_sensor_units[i] = unit;
-    g_sensor_tiles[i] = make_sensor_card(g_home_grid, col, row, title.c_str(), current, unit.c_str());
+    g_sensor_tiles[i] = make_sensor_card(g_home_grid, col, row, title.c_str(), current, unit.c_str(), cfg.sensor_colors[i]);
   }
 
   Serial.printf("[Home] Heap nach Sensoren: free=%u, min-free=%u\n",
@@ -335,13 +351,21 @@ void home_reload_layout() {
     const String& alias = cfg.scene_slots[i];
     g_scene_aliases[i] = alias;
     if (!alias.length()) {
+      // Leerer Platzhalter, damit Position blockiert bleibt
+      lv_obj_t* placeholder = lv_obj_create(g_home_grid);
+      lv_obj_set_style_bg_opa(placeholder, LV_OPA_TRANSP, 0);
+      lv_obj_set_style_border_width(placeholder, 0, 0);
+      lv_obj_set_height(placeholder, CARD_H);
+      lv_obj_set_grid_cell(placeholder,
+          LV_GRID_ALIGN_STRETCH, col, 1,
+          LV_GRID_ALIGN_STRETCH, row, 1);
       continue;
     }
     String title = cfg.scene_titles[i];
     if (!title.length()) {
       title = make_display_label(alias, false);
     }
-    make_scene_button(g_home_grid, col, row, title.c_str(), static_cast<uint8_t>(i));
+    make_scene_button(g_home_grid, col, row, title.c_str(), static_cast<uint8_t>(i), cfg.scene_colors[i]);
   }
 
   Serial.printf("[Home] Heap nach Szenen: free=%u, min-free=%u\n",

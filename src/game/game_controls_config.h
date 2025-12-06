@@ -9,6 +9,7 @@ struct GameButton {
   String name;          // "Landing Gear", "Lights", etc.
   uint8_t key_code;     // KEY_N, KEY_L, etc. (0 = leer)
   uint8_t modifier;     // 0 oder KEY_LEFT_CTRL, KEY_LEFT_ALT, KEY_LEFT_SHIFT
+  uint32_t color;       // RGB Hex (z.B. 0x353535), 0 = Standard-Grau
 };
 
 struct GameControlsConfigData {

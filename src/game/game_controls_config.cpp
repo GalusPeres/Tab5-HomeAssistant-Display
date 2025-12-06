@@ -24,6 +24,9 @@ bool GameControlsConfig::load() {
 
     snprintf(key, sizeof(key), "game_mod%u", static_cast<unsigned>(i));
     data.buttons[i].modifier = prefs.getUChar(key, 0);
+
+    snprintf(key, sizeof(key), "game_col%u", static_cast<unsigned>(i));
+    data.buttons[i].color = prefs.getUInt(key, 0);
   }
 
   prefs.end();
@@ -47,6 +50,9 @@ bool GameControlsConfig::save(const GameControlsConfigData& incoming) {
 
     snprintf(key, sizeof(key), "game_mod%u", static_cast<unsigned>(i));
     prefs.putUChar(key, incoming.buttons[i].modifier);
+
+    snprintf(key, sizeof(key), "game_col%u", static_cast<unsigned>(i));
+    prefs.putUInt(key, incoming.buttons[i].color);
   }
 
   prefs.end();

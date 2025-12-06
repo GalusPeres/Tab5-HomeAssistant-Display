@@ -34,6 +34,8 @@ bool HaBridgeConfig::load() {
     data.sensor_titles[i] = prefs.getString(key, "");
     snprintf(key, sizeof(key), "unit_s%u", static_cast<unsigned>(i));
     data.sensor_custom_units[i] = prefs.getString(key, "");
+    snprintf(key, sizeof(key), "color_s%u", static_cast<unsigned>(i));
+    data.sensor_colors[i] = prefs.getUInt(key, 0);
   }
   for (size_t i = 0; i < HA_SCENE_SLOT_COUNT; ++i) {
     char key[12];
@@ -41,6 +43,8 @@ bool HaBridgeConfig::load() {
     data.scene_slots[i] = prefs.getString(key, "");
     snprintf(key, sizeof(key), "title_c%u", static_cast<unsigned>(i));
     data.scene_titles[i] = prefs.getString(key, "");
+    snprintf(key, sizeof(key), "color_c%u", static_cast<unsigned>(i));
+    data.scene_colors[i] = prefs.getUInt(key, 0);
   }
 
   prefs.end();
@@ -68,6 +72,8 @@ bool HaBridgeConfig::save(const HaBridgeConfigData& incoming) {
     prefs.putString(key, incoming.sensor_titles[i]);
     snprintf(key, sizeof(key), "unit_s%u", static_cast<unsigned>(i));
     prefs.putString(key, incoming.sensor_custom_units[i]);
+    snprintf(key, sizeof(key), "color_s%u", static_cast<unsigned>(i));
+    prefs.putUInt(key, incoming.sensor_colors[i]);
   }
   for (size_t i = 0; i < HA_SCENE_SLOT_COUNT; ++i) {
     char key[12];
@@ -75,6 +81,8 @@ bool HaBridgeConfig::save(const HaBridgeConfigData& incoming) {
     prefs.putString(key, incoming.scene_slots[i]);
     snprintf(key, sizeof(key), "title_c%u", static_cast<unsigned>(i));
     prefs.putString(key, incoming.scene_titles[i]);
+    snprintf(key, sizeof(key), "color_c%u", static_cast<unsigned>(i));
+    prefs.putUInt(key, incoming.scene_colors[i]);
   }
   prefs.end();
 

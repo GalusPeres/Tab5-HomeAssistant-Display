@@ -17,6 +17,8 @@ struct HaBridgeConfigData {
   String sensor_titles[HA_SENSOR_SLOT_COUNT];
   String sensor_custom_units[HA_SENSOR_SLOT_COUNT];
   String scene_titles[HA_SCENE_SLOT_COUNT];
+  uint32_t sensor_colors[HA_SENSOR_SLOT_COUNT];  // RGB Hex (0 = Standard 0x2A2A2A)
+  uint32_t scene_colors[HA_SCENE_SLOT_COUNT];    // RGB Hex (0 = Standard 0x353535)
 };
 
 class HaBridgeConfig {
