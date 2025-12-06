@@ -165,7 +165,7 @@ static SensorTileWidgets make_sensor_card(lv_obj_t* parent, int col, int row,
 static lv_obj_t* make_scene_button(lv_obj_t* parent, int col, int row,
                                    const char* text, uint8_t slot, uint32_t color) {
   lv_obj_t* btn = lv_button_create(parent);
-  lv_obj_set_style_radius(btn, 18, 0);
+  lv_obj_set_style_radius(btn, 22, 0);
   lv_obj_set_style_border_width(btn, 0, 0);
 
   // Farbe verwenden (Standard: 0x353535 wenn color = 0)
