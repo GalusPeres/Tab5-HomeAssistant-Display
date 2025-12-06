@@ -21,9 +21,12 @@ void GameWSServer::init(uint16_t port) {
   ws->begin();
   ws->onEvent(onWebSocketEvent);
 
+  // Ping/Pong Keepalive aktivieren (alle 25 Sekunden)
+  ws->enableHeartbeat(25000, 3000, 2);
+
   running = true;
 
-  Serial.printf("[GameWS] WebSocket Server läuft auf Port %u\n", port);
+  Serial.printf("[GameWS] WebSocket Server läuft auf Port %u (Keepalive aktiv)\n", port);
   Serial.println("[GameWS] Clients können sich verbinden: ws://<tab5-ip>:8081");
 }
 

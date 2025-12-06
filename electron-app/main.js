@@ -10,6 +10,8 @@ let mainWindow = null;
 let tray = null;
 let ws = null;
 let reconnectTimer = null;
+let pingInterval = null;
+let connectionAttempts = 0;
 
 // Tab5 WebSocket Verbindung
 let TAB5_IP = '192.168.2.235'; // Änderbar über UI
@@ -104,17 +106,31 @@ function createTray() {
 function connectToTab5() {
   const url = `ws://${TAB5_IP}:${TAB5_PORT}`;
 
-  log(`Connecting to Tab5: ${url}`);
+  connectionAttempts++;
+  log(`Connecting to Tab5: ${url} (attempt ${connectionAttempts})`);
 
-  ws = new WebSocket(url);
+  ws = new WebSocket(url, {
+    perMessageDeflate: false,
+    handshakeTimeout: 5000
+  });
 
   ws.on('open', () => {
     log('✅ Connected to Tab5!');
     updateStatus('connected');
+    connectionAttempts = 0;
+
+    // Reconnect Timer clearen
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
+
+    // Ping alle 15 Sekunden senden
+    pingInterval = setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.ping();
+      }
+    }, 15000);
   });
 
   ws.on('message', (data) => {
@@ -126,15 +142,28 @@ function connectToTab5() {
     }
   });
 
-  ws.on('close', () => {
-    log('❌ Disconnected from Tab5');
+  ws.on('pong', () => {
+    // Server antwortet auf Ping - Verbindung ist aktiv
+  });
+
+  ws.on('close', (code, reason) => {
+    log(`❌ Disconnected from Tab5 (code: ${code})`);
     updateStatus('disconnected');
+
+    // Cleanup
+    if (pingInterval) {
+      clearInterval(pingInterval);
+      pingInterval = null;
+    }
     ws = null;
 
-    // Auto-Reconnect nach 5 Sekunden
+    // Auto-Reconnect mit exponential backoff (max 30 Sekunden)
+    const delay = Math.min(5000 * Math.pow(1.5, Math.min(connectionAttempts, 5)), 30000);
+    log(`Reconnecting in ${Math.round(delay / 1000)} seconds...`);
+
     reconnectTimer = setTimeout(() => {
       connectToTab5();
-    }, 5000);
+    }, delay);
   });
 
   ws.on('error', (err) => {
@@ -210,12 +239,21 @@ ipcMain.on('connect', () => {
 
 ipcMain.on('disconnect', () => {
   if (ws) {
+    // Cleanup Timers
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (pingInterval) {
+      clearInterval(pingInterval);
+      pingInterval = null;
+    }
+
+    // Verbindung schließen
     ws.close();
     ws = null;
-  }
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
+    updateStatus('disconnected');
+    log('Manually disconnected');
   }
 });
 
@@ -230,10 +268,10 @@ app.whenReady().then(() => {
   createTray();    // Tray zuerst erstellen
   createWindow();  // Dann Window (startet minimiert wenn Tray existiert)
 
-  // KEIN Auto-Connect mehr - User muss manuell connecten
-  // setTimeout(() => {
-  //   connectToTab5();
-  // }, 2000);
+  // Auto-Connect nach 2 Sekunden
+  setTimeout(() => {
+    connectToTab5();
+  }, 2000);
 });
 
 app.on('window-all-closed', () => {
