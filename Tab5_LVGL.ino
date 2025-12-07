@@ -14,6 +14,7 @@
 #include "src/ui/tab_settings.h"
 #include "src/game/game_controls_config.h"
 #include "src/game/game_ws_server.h"
+#include "src/tiles/tile_config.h"
 
 static uint32_t last_status_update = 0;
 
@@ -62,6 +63,7 @@ void setup() {
   bool has_config = configManager.load();
   haBridgeConfig.load();
   gameControlsConfig.load();
+  tileConfig.load();
   Serial.println("[Setup] Configs OK");
   Serial.flush();
 

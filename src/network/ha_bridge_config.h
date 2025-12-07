@@ -35,6 +35,9 @@ public:
   String findSensorName(const String& entity_id) const;
   String findSensorInitialValue(const String& entity_id) const;
 
+  // Update live sensor value (for web interface)
+  void updateSensorValue(const String& entity_id, const String& value);
+
   String buildJsonPayload(const char* device_id,
                           const char* base_topic,
                           const char* ha_prefix) const;

@@ -446,3 +446,51 @@ static String lookupKeyValue(const String& text, const String& key) {
   }
   return "";
 }
+
+void HaBridgeConfig::updateSensorValue(const String& entity_id, const String& value) {
+  if (entity_id.length() == 0) return;
+
+  // Parse sensor_values_map and update/add the value
+  String& valuesMap = data.sensor_values_map;
+  String newMap = "";
+  bool found = false;
+
+  int start = 0;
+  while (start < valuesMap.length()) {
+    int end = valuesMap.indexOf('\n', start);
+    if (end < 0) end = valuesMap.length();
+
+    String line = valuesMap.substring(start, end);
+    int eq = line.indexOf('=');
+
+    if (eq > 0) {
+      String entity = line.substring(0, eq);
+      entity.trim();
+
+      if (entity.equalsIgnoreCase(entity_id)) {
+        // Update existing entry
+        if (newMap.length()) newMap += '\n';
+        newMap += entity_id + "=" + value;
+        found = true;
+      } else {
+        // Keep existing entry
+        if (newMap.length()) newMap += '\n';
+        newMap += line;
+      }
+    } else if (line.length() > 0) {
+      // Keep non-empty lines without '='
+      if (newMap.length()) newMap += '\n';
+      newMap += line;
+    }
+
+    start = end + 1;
+  }
+
+  // Add new entry if not found
+  if (!found) {
+    if (newMap.length()) newMap += '\n';
+    newMap += entity_id + "=" + value;
+  }
+
+  valuesMap = newMap;
+}

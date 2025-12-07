@@ -3,7 +3,9 @@
 #include "src/network/network_manager.h"
 #include "src/network/ha_bridge_config.h"
 #include "src/ui/tab_home.h"
+#include "src/ui/tab_tiles_home.h"
 #include "src/ui/tab_solar.h"
+#include "src/tiles/tile_config.h"
 #include <PubSubClient.h>
 #include <algorithm>
 #include <vector>
@@ -23,6 +25,7 @@ struct TopicRoute {
 
 struct DynamicSensorRoute {
   String topic;
+  String entity_id;
   std::vector<uint8_t> slots;
 };
 
@@ -100,6 +103,7 @@ static void rebuildDynamicRoutes(std::vector<DynamicSensorRoute>& routes) {
     if (it == routes.end()) {
       DynamicSensorRoute route;
       route.topic = topic;
+      route.entity_id = entity;
       route.slots.push_back(slot);
       routes.push_back(route);
     } else {
@@ -111,9 +115,14 @@ static void rebuildDynamicRoutes(std::vector<DynamicSensorRoute>& routes) {
 static bool tryHandleDynamicSensor(const char* topic, const char* payload) {
   for (const auto& route : g_dynamic_routes) {
     if (route.topic == topic) {
+      // Update old slot-based system
       for (uint8_t slot : route.slots) {
         home_set_sensor_slot_value(slot, payload);
       }
+      // Update new tile-based system (display)
+      tiles_home_update_sensor_by_entity(route.entity_id.c_str(), payload);
+      // Update sensor values map (for web interface)
+      haBridgeConfig.updateSensorValue(route.entity_id, payload);
       return true;
     }
   }

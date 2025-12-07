@@ -5,6 +5,9 @@
 #include "src/network/mqtt_handlers.h"
 #include "src/ui/tab_settings.h"
 #include "src/game/game_controls_config.h"
+#include "src/tiles/tile_config.h"
+#include "src/ui/tab_tiles_home.h"
+#include "src/ui/tab_tiles_game.h"
 
 // Forward declaration - kein Include von tab_game.h nötig
 extern void game_reload_layout();
@@ -274,4 +277,226 @@ void WebAdminServer::handleRestart() {
   server.send(303, "text/plain", "");
   delay(200);
   ESP.restart();
+}
+
+void WebAdminServer::handleGetTiles() {
+  // GET /api/tiles?tab=home|game[&index=0-11]
+  // If index is omitted, return all tiles as array
+  if (!server.hasArg("tab")) {
+    server.send(400, "application/json", "{\"error\":\"Missing tab parameter\"}");
+    return;
+  }
+
+  String tab = server.arg("tab");
+  if (tab != "home" && tab != "game") {
+    server.send(400, "application/json", "{\"error\":\"Invalid tab\"}");
+    return;
+  }
+
+  const TileGridConfig& grid = (tab == "home") ? tileConfig.getHomeGrid() : tileConfig.getGameGrid();
+
+  // Single tile request
+  if (server.hasArg("index")) {
+    int index = server.arg("index").toInt();
+    if (index < 0 || index >= TILES_PER_GRID) {
+      server.send(400, "application/json", "{\"error\":\"Invalid index\"}");
+      return;
+    }
+
+    const Tile& tile = grid.tiles[index];
+
+    // Build JSON response for single tile
+    String json = "{";
+    json += "\"type\":" + String((int)tile.type) + ",";
+    json += "\"title\":\"";
+    json += tile.title;
+    json += "\",\"bg_color\":" + String(tile.bg_color) + ",";
+    json += "\"sensor_entity\":\"";
+    json += tile.sensor_entity;
+    json += "\",\"sensor_unit\":\"";
+    json += tile.sensor_unit;
+    json += "\",\"scene_alias\":\"";
+    json += tile.scene_alias;
+    json += "\",\"key_macro\":\"";
+    json += tile.key_macro;
+    json += "\",\"key_code\":" + String(tile.key_code) + ",";
+    json += "\"key_modifier\":" + String(tile.key_modifier);
+    json += "}";
+
+    server.send(200, "application/json", json);
+    return;
+  }
+
+  // All tiles request - return array
+  String json = "[";
+  for (uint8_t i = 0; i < TILES_PER_GRID; i++) {
+    const Tile& tile = grid.tiles[i];
+
+    if (i > 0) json += ",";
+    json += "{";
+    json += "\"type\":" + String((int)tile.type) + ",";
+    json += "\"title\":\"";
+    json += tile.title;
+    json += "\",\"bg_color\":" + String(tile.bg_color) + ",";
+    json += "\"sensor_entity\":\"";
+    json += tile.sensor_entity;
+    json += "\",\"sensor_unit\":\"";
+    json += tile.sensor_unit;
+    json += "\",\"scene_alias\":\"";
+    json += tile.scene_alias;
+    json += "\",\"key_macro\":\"";
+    json += tile.key_macro;
+    json += "\",\"key_code\":" + String(tile.key_code) + ",";
+    json += "\"key_modifier\":" + String(tile.key_modifier);
+    json += "}";
+  }
+  json += "]";
+
+  server.send(200, "application/json", json);
+}
+
+void WebAdminServer::handleSaveTiles() {
+  // POST /api/tiles
+  if (!server.hasArg("tab") || !server.hasArg("index") || !server.hasArg("type")) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Missing parameters\"}");
+    return;
+  }
+
+  String tab = server.arg("tab");
+  int index = server.arg("index").toInt();
+  int type = server.arg("type").toInt();
+
+  if ((tab != "home" && tab != "game") || index < 0 || index >= TILES_PER_GRID) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid parameters\"}");
+    return;
+  }
+
+  // Get current grid (mutable reference)
+  TileGridConfig& grid = (tab == "home") ? tileConfig.getHomeGrid() : tileConfig.getGameGrid();
+  Tile& tile = grid.tiles[index];
+
+  // Update tile data
+  tile.type = static_cast<TileType>(type);
+  tile.title = server.hasArg("title") ? server.arg("title") : "";
+
+  // Parse color
+  if (server.hasArg("bg_color")) {
+    tile.bg_color = server.arg("bg_color").toInt();
+  }
+
+  // Type-specific fields
+  if (type == TILE_SENSOR) {
+    tile.sensor_entity = server.hasArg("sensor_entity") ? server.arg("sensor_entity") : "";
+    tile.sensor_unit = server.hasArg("sensor_unit") ? server.arg("sensor_unit") : "";
+  } else if (type == TILE_SCENE) {
+    tile.scene_alias = server.hasArg("scene_alias") ? server.arg("scene_alias") : "";
+  } else if (type == TILE_KEY) {
+    tile.key_macro = server.hasArg("key_macro") ? server.arg("key_macro") : "";
+
+    // Parse macro to key_code and modifier
+    String macro = tile.key_macro;
+    macro.toLowerCase();
+
+    uint8_t modifier = 0;
+    uint8_t key_code = 0;
+
+    // Parse modifiers
+    if (macro.indexOf("ctrl+") >= 0) { modifier |= 0x01; macro.replace("ctrl+", ""); }
+    if (macro.indexOf("shift+") >= 0) { modifier |= 0x02; macro.replace("shift+", ""); }
+    if (macro.indexOf("alt+") >= 0) { modifier |= 0x04; macro.replace("alt+", ""); }
+
+    // Parse key
+    macro.trim();
+    if (macro.length() == 1 && macro[0] >= 'a' && macro[0] <= 'z') {
+      key_code = 0x04 + (macro[0] - 'a');
+    } else if (macro.length() == 1 && macro[0] >= '0' && macro[0] <= '9') {
+      key_code = 0x1E + (macro[0] - '0');
+    } else if (macro == "space") key_code = 0x2C;
+    else if (macro == "enter") key_code = 0x28;
+    else if (macro == "backspace") key_code = 0x2A;
+    else if (macro == "tab") key_code = 0x2B;
+    else if (macro == "esc" || macro == "escape") key_code = 0x29;
+
+    tile.key_code = key_code;
+    tile.key_modifier = modifier;
+  }
+
+  // Save to NVS
+  bool success = tileConfig.save(tileConfig.getHomeGrid(), tileConfig.getGameGrid());
+
+  if (success) {
+    Serial.printf("[WebAdmin] Tile %s[%d] gespeichert - Type: %d\n", tab.c_str(), index, type);
+
+    // Rebuild MQTT dynamic routes for new sensor entities
+    mqttReloadDynamicSlots();
+    Serial.println("[WebAdmin] MQTT Routes neu aufgebaut");
+
+    // Reload display layouts
+    if (tab == "home") {
+      tiles_home_reload_layout();
+      Serial.println("[WebAdmin] Home Layout neu geladen");
+    } else {
+      tiles_game_reload_layout();
+      Serial.println("[WebAdmin] Game Layout neu geladen");
+    }
+
+    server.send(200, "application/json", "{\"success\":true}");
+  } else {
+    Serial.printf("[WebAdmin] Fehler beim Speichern von Tile %s[%d]\n", tab.c_str(), index);
+    server.send(500, "application/json", "{\"success\":false,\"error\":\"Save failed\"}");
+  }
+}
+
+void WebAdminServer::handleGetSensorValues() {
+  const HaBridgeConfigData& ha = haBridgeConfig.get();
+
+  Serial.println("[WebAdmin] /api/sensor_values Request");
+  Serial.print("[WebAdmin] sensor_values_map: ");
+  Serial.println(ha.sensor_values_map);
+
+  // Build JSON response with sensor values
+  String json = "{";
+  bool first = true;
+
+  // Parse sensor_values_map (format: "entity1=value1\nentity2=value2\n...")
+  const String& valuesMap = ha.sensor_values_map;
+  int start = 0;
+
+  while (start < valuesMap.length()) {
+    int eqPos = valuesMap.indexOf('=', start);
+    if (eqPos < 0) break;
+
+    int endPos = valuesMap.indexOf('\n', eqPos);
+    if (endPos < 0) endPos = valuesMap.length();
+
+    String entity = valuesMap.substring(start, eqPos);
+    String value = valuesMap.substring(eqPos + 1, endPos);
+
+    entity.trim();
+    value.trim();
+
+    if (entity.length() > 0 && value.length() > 0) {
+      if (!first) json += ",";
+      json += "\"";
+      json += entity;
+      json += "\":\"";
+
+      // Escape quotes in value
+      for (int i = 0; i < value.length(); i++) {
+        char c = value.charAt(i);
+        if (c == '"' || c == '\\') json += '\\';
+        json += c;
+      }
+
+      json += "\"";
+      first = false;
+    }
+
+    start = endPos + 1;
+  }
+
+  json += "}";
+  Serial.print("[WebAdmin] Sending JSON: ");
+  Serial.println(json);
+  server.send(200, "application/json", json);
 }
