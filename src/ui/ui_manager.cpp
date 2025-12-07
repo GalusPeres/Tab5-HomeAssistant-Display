@@ -303,51 +303,40 @@ void UIManager::nav_button_event_cb(lv_event_t *e) {
 void UIManager::updateStatusbar() {
   if (!status_time_label || !status_date_label) return;
 
-
   char buf[48];
 
   bool have_time = false;
 
   int hour = 0, minute = 0, day = 0, month = 0, year = 0;
 
-
+  auto is_valid_datetime = [](int y, int m, int d, int h, int min) {
+    return (y >= 2023 && y <= 2099) &&
+           (m >= 1 && m <= 12) &&
+           (d >= 1 && d <= 31) &&
+           (h >= 0 && h < 24) &&
+           (min >= 0 && min < 60);
+  };
 
   struct tm timeinfo;
 
   if (getLocalTime(&timeinfo, 0)) {
-
-    have_time = true;
-
     hour = timeinfo.tm_hour;
-
     minute = timeinfo.tm_min;
-
     day = timeinfo.tm_mday;
-
     month = timeinfo.tm_mon + 1;
-
     year = timeinfo.tm_year + 1900;
-
+    have_time = is_valid_datetime(year, month, day, hour, minute);
   } else if (M5.Rtc.isEnabled()) {
-
     m5::rtc_datetime_t dt;
-
     if (M5.Rtc.getDateTime(&dt)) {
-
-      have_time = true;
-
       hour = dt.time.hours;
-
       minute = dt.time.minutes;
-
       day = dt.date.date;
-
       month = dt.date.month;
-
       year = dt.date.year;
-
+      // Vermeide kurz falsche RTC-Zeit bevor NTP greift
+      have_time = is_valid_datetime(year, month, day, hour, minute);
     }
-
   }
 
 
