@@ -176,7 +176,8 @@ void UIManager::statusbarInit(lv_obj_t *tab_bar) {
   lv_obj_set_style_text_color(status_time_label, lv_color_white(), 0);
 
   lv_obj_set_style_text_font(status_time_label, &font_roboto_mono_digits_48, 0);
-  lv_label_set_text(status_time_label, "--:--");
+  // Platzhalter nur mit Zeichen, die im Ziffern-Font vorhanden sind
+  lv_label_set_text(status_time_label, "00:00");
 
 
 
@@ -191,7 +192,8 @@ void UIManager::statusbarInit(lv_obj_t *tab_bar) {
   lv_obj_set_style_text_color(status_date_label, lv_color_hex(0xC8C8C8), 0);
 
   lv_obj_set_style_text_font(status_date_label, &font_roboto_mono_digits_24, 0);
-  lv_label_set_text(status_date_label, "--.--.----");
+  // Platzhalter nur mit Zeichen, die im Ziffern-Font vorhanden sind
+  lv_label_set_text(status_date_label, "00.00.0000");
 }
 
 lv_obj_t* UIManager::configureNavButton(lv_obj_t *btn, const char *icon_text) {
