@@ -38,6 +38,51 @@ struct SensorTileWidgets {
 static SensorTileWidgets g_home_sensors[TILES_PER_GRID];
 static SensorTileWidgets g_game_sensors[TILES_PER_GRID];
 
+/* === Thread-Safe Update Queue (MQTT → Main Loop) === */
+struct SensorUpdate {
+  uint8_t grid_index;
+  String value;
+  String unit;
+  bool valid;
+};
+
+static const uint8_t QUEUE_SIZE = 20;
+static SensorUpdate g_update_queue[QUEUE_SIZE];
+static volatile uint8_t g_queue_head = 0;
+static volatile uint8_t g_queue_tail = 0;
+
+// MQTT Callback ruft das auf (thread-safe!)
+void queue_sensor_tile_update(uint8_t grid_index, const char* value, const char* unit) {
+  uint8_t next_head = (g_queue_head + 1) % QUEUE_SIZE;
+
+  if (next_head == g_queue_tail) {
+    Serial.println("[Queue] VOLL! Update verworfen!");
+    return;
+  }
+
+  g_update_queue[g_queue_head].grid_index = grid_index;
+  g_update_queue[g_queue_head].value = String(value);
+  g_update_queue[g_queue_head].unit = unit ? String(unit) : "";
+  g_update_queue[g_queue_head].valid = true;
+
+  g_queue_head = next_head;
+}
+
+// Main Loop ruft das VOR lv_timer_handler() auf!
+void process_sensor_update_queue() {
+  while (g_queue_tail != g_queue_head) {
+    SensorUpdate& upd = g_update_queue[g_queue_tail];
+
+    if (upd.valid) {
+      update_sensor_tile_value(upd.grid_index, upd.value.c_str(),
+                              upd.unit.length() > 0 ? upd.unit.c_str() : nullptr);
+      upd.valid = false;
+    }
+
+    g_queue_tail = (g_queue_tail + 1) % QUEUE_SIZE;
+  }
+}
+
 /* === Helfer === */
 static void set_label_style(lv_obj_t* lbl, lv_color_t c, const lv_font_t* f) {
   lv_obj_set_style_text_color(lbl, c, 0);
@@ -45,11 +90,43 @@ static void set_label_style(lv_obj_t* lbl, lv_color_t c, const lv_font_t* f) {
 }
 
 void render_tile_grid(lv_obj_t* parent, const TileGridConfig& config, GridType grid_type, scene_publish_cb_t scene_cb) {
+  // Memory Monitoring - Vorher
+  uint32_t heap_before = ESP.getFreeHeap();
+  uint32_t psram_before = ESP.getFreePsram();
+  Serial.printf("[TileRenderer] Lade %d Tiles... | Heap: %u KB | PSRAM: %u KB\n",
+                TILES_PER_GRID, heap_before / 1024, psram_before / 1024);
+
   for (int i = 0; i < TILES_PER_GRID; ++i) {
+    // Watchdog füttern (verhindert Timeout bei vielen Tiles)
+    yield();
+
     int row = i / 3;
     int col = i % 3;
+
+    // Fehlerbehandlung: Ein defektes Tile crasht nicht das ganze System
+    if (parent == nullptr) {
+      Serial.println("[TileRenderer] ERROR: Parent ist NULL!");
+      return;
+    }
+
     render_tile(parent, col, row, config.tiles[i], i, grid_type, scene_cb);
+
+    // Kleine Pause nach jedem Tile (verhindert Heap-Überlastung)
+    if (i < TILES_PER_GRID - 1) {
+      delay(5);
+    }
   }
+
+  // Memory Monitoring - Nachher
+  uint32_t heap_after = ESP.getFreeHeap();
+  uint32_t psram_after = ESP.getFreePsram();
+  int32_t heap_used = heap_before - heap_after;
+  int32_t psram_used = psram_before - psram_after;
+
+  Serial.printf("[TileRenderer] ✓ Alle Tiles geladen | Heap: %u KB (-%d KB) | PSRAM: %u KB (-%d KB)\n",
+                heap_after / 1024, heap_used / 1024,
+                psram_after / 1024, psram_used / 1024);
+  Serial.printf("[TileRenderer] Min Free Heap seit Boot: %u KB\n", ESP.getMinFreeHeap() / 1024);
 }
 
 void render_tile(lv_obj_t* parent, int col, int row, const Tile& tile, uint8_t index, GridType grid_type, scene_publish_cb_t scene_cb) {
@@ -69,7 +146,16 @@ void render_tile(lv_obj_t* parent, int col, int row, const Tile& tile, uint8_t i
 }
 
 void render_sensor_tile(lv_obj_t* parent, int col, int row, const Tile& tile, uint8_t index, GridType grid_type) {
+  if (!parent) {
+    Serial.println("[TileRenderer] ERROR: parent NULL bei Sensor-Tile");
+    return;
+  }
+
   lv_obj_t* card = lv_obj_create(parent);
+  if (!card) {
+    Serial.println("[TileRenderer] ERROR: Konnte Sensor-Card nicht erstellen");
+    return;
+  }
 
   // Farbe verwenden (Standard: 0x2A2A2A wenn color = 0)
   uint32_t card_color = (tile.bg_color != 0) ? tile.bg_color : 0x2A2A2A;
@@ -95,6 +181,11 @@ void render_sensor_tile(lv_obj_t* parent, int col, int row, const Tile& tile, ui
 
   // Container für Wert + Einheit (Flex Layout für sauberes Nebeneinander)
   lv_obj_t* container = lv_obj_create(card);
+  if (!container) {
+    Serial.println("[TileRenderer] ERROR: Konnte Value-Container nicht erstellen");
+    return;
+  }
+
   lv_obj_set_size(container, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
   lv_obj_set_style_bg_opa(container, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(container, 0, 0);
@@ -106,13 +197,21 @@ void render_sensor_tile(lv_obj_t* parent, int col, int row, const Tile& tile, ui
 
   // Wert-Label (große Schrift)
   lv_obj_t* v = lv_label_create(container);
-  set_label_style(v, lv_color_white(), FONT_VALUE);
-  lv_label_set_text(v, "--");
+  if (!v) {
+    Serial.println("[TileRenderer] WARN: Konnte Value-Label nicht erstellen");
+  } else {
+    set_label_style(v, lv_color_white(), FONT_VALUE);
+    lv_label_set_text(v, "--");
+  }
 
   // Einheit-Label (kleinere Schrift)
   lv_obj_t* u = lv_label_create(container);
-  set_label_style(u, lv_color_hex(0xE6E6E6), FONT_UNIT);
-  lv_label_set_text(u, "");
+  if (!u) {
+    Serial.println("[TileRenderer] WARN: Konnte Unit-Label nicht erstellen");
+  } else {
+    set_label_style(u, lv_color_hex(0xE6E6E6), FONT_UNIT);
+    lv_label_set_text(u, "");
+  }
 
   // Speichern für spätere Updates
   SensorTileWidgets* target = (grid_type == GridType::HOME) ? g_home_sensors : g_game_sensors;

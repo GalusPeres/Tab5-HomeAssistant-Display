@@ -72,9 +72,10 @@ void tiles_home_update_sensor_by_entity(const char* entity_id, const char* value
     const Tile& tile = config.tiles[i];
     if (tile.type == TILE_SENSOR && tile.sensor_entity.equalsIgnoreCase(entity_id)) {
       // Übergebe Wert + Einheit aus Config (wie im Webinterface)
+      // WICHTIG: Queue statt direktem Update (verhindert LVGL Race Condition!)
       const char* unit = tile.sensor_unit.length() > 0 ? tile.sensor_unit.c_str() : nullptr;
-      update_sensor_tile_value(i, value, unit);
-      Serial.printf("[TilesHome] Sensor %s@%u = %s %s\n", entity_id, i, value, unit ? unit : "");
+      queue_sensor_tile_update(i, value, unit);
+      Serial.printf("[TilesHome] Sensor %s@%u queued: %s %s\n", entity_id, i, value, unit ? unit : "");
     }
   }
 }

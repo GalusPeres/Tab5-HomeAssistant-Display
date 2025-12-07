@@ -34,6 +34,11 @@ public:
   void wakeFromDisplaySleep();
   bool isInSleep() const { return is_display_sleeping; }
 
+  // Schlaf sperren/freigeben (z.B. Web-Admin aktiv)
+  void blockSleep(uint32_t duration_ms = 0);  // 0 = unbegrenzt, sonst Timeout
+  void allowSleep();
+  bool isSleepBlocked() const;
+
   // Ermittelt aktuelles Sleep-Timeout basierend auf Batterie/Netzteil
   uint32_t getSleepTimeout() const;
 
@@ -49,6 +54,8 @@ private:
   bool is_display_sleeping = false;
   uint8_t saved_brightness = 150;  // Gespeicherte Helligkeit vor Sleep
   lv_display_t* disp = nullptr;  // Referenz zum Display (für FPS-Anpassung)
+  bool sleep_blocked = false;
+  uint32_t sleep_block_until = 0; // millis-Deadline, 0 = keine Deadline
 };
 
 // Globale Instanz

@@ -83,7 +83,7 @@ String WebAdminServer::getAdminPage() {
     .slot input { padding:9px; border:1px solid #d6defa; border-radius:10px; font-size:13px; margin-bottom:6px; }
 
     /* Tile Editor - M5Stack Tab5: Content 1100x720 (50% Web-Skalierung) */
-    /* Original: Tile 335x150px, Gap 24px → Web: Tile 168x75px, Gap 12px */
+    /* Original: Tile 335x150px, Gap 24px Ã¢â€ â€™ Web: Tile 168x75px, Gap 12px */
     .tile-editor { display:grid; grid-template-columns:auto 350px; gap:24px; align-items:start; }
     .tile-grid {
       display:grid;
@@ -97,23 +97,24 @@ String WebAdminServer::getAdminPage() {
       height:fit-content;
     }
 
-    /* Display-ähnliche Kacheln (50% Skalierung) */
+    /* Display-ÃƒÂ¤hnliche Kacheln (50% Skalierung) */
     /* Display: Title=TOP_LEFT, Value=CENTER(-30,18), Unit=RIGHT_MID */
     .tile {
       background:#2A2A2A;
       border-radius:11px;
       cursor:pointer;
-      border:2px solid transparent;
+      border:3px solid transparent;
       padding:12px 10px;
       position:relative;
+      box-sizing:border-box;
     }
-    /* Sensor tiles: Grid-Layout für Title + Value */
+    /* Sensor tiles: Grid-Layout fÃƒÂ¼r Title + Value */
     .tile.sensor {
       display:grid;
       grid-template-rows:auto 1fr;
       grid-template-columns:1fr;
     }
-    /* Scene/Key tiles: Flex-Layout für komplett zentrierten Titel (lv_obj_center) */
+    /* Scene/Key tiles: Flex-Layout fÃƒÂ¼r komplett zentrierten Titel (lv_obj_center) */
     .tile.scene,
     .tile.key {
       display:flex;
@@ -121,18 +122,26 @@ String WebAdminServer::getAdminPage() {
       justify-content:center;
     }
     .tile.active {
-      border-color:#4A9EFF;
-      box-shadow:0 0 0 1px #4A9EFF;
+      border:3px solid #4A9EFF;
+      box-shadow:0 0 12px rgba(74,158,255,0.6);
+    }
+    .tile.active:hover {
+      opacity:1;
+      filter:none;
     }
     /* Empty tiles: komplett transparent wie im Display */
-    .tile.empty {
-      background:transparent !important;
-      border:2px solid transparent;
-    }
-    .tile.empty:hover {
-      border-color:rgba(74,158,255,0.4);
-    }
-    /* Sensor tiles: Title linksbündig (TOP_LEFT) */
+      .tile.empty {
+        background:transparent !important;
+        border:3px solid transparent;
+      }
+      .tile.empty.active {
+        border:3px solid #4A9EFF;
+        box-shadow:0 0 12px rgba(74,158,255,0.6);
+      }
+      .tile.empty:hover:not(.active) {
+        border-color:rgba(74,158,255,0.4);
+      }
+    /* Sensor tiles: Title linksbÃƒÂ¼ndig (TOP_LEFT) */
     .tile-title {
       color:#fff;
       font-weight:normal;
@@ -225,6 +234,65 @@ String WebAdminServer::getAdminPage() {
     // Tile Editor State
     let currentTileTab = 'home';
     let currentTileIndex = -1;
+    let drafts = { home: {}, game: {} };
+
+    function persistDrafts() {
+      try { localStorage.setItem('tileDrafts', JSON.stringify(drafts)); } catch (e) {}
+    }
+    function loadDraftsFromStorage() {
+      try {
+        const raw = localStorage.getItem('tileDrafts');
+        if (raw) drafts = JSON.parse(raw);
+      } catch (e) {
+        drafts = { home: {}, game: {} };
+      }
+    }
+    function clearDraft(tab, index) {
+      if (drafts[tab] && drafts[tab][index]) {
+        delete drafts[tab][index];
+        persistDrafts();
+      }
+    }
+
+    function updateDraft(tab) {
+      if (currentTileIndex === -1) return;
+      const prefix = tab === 'home' ? 'home' : 'game';
+      const d = {
+        type: document.getElementById(prefix + '_tile_type')?.value || '0',
+        title: document.getElementById(prefix + '_tile_title')?.value || '',
+        color: document.getElementById(prefix + '_tile_color')?.value || '#2A2A2A',
+        sensor_entity: document.getElementById(prefix + '_sensor_entity')?.value || '',
+        sensor_unit: document.getElementById(prefix + '_sensor_unit')?.value || '',
+        scene_alias: document.getElementById(prefix + '_scene_alias')?.value || '',
+        key_macro: document.getElementById(prefix + '_key_macro')?.value || ''
+      };
+      drafts[tab][currentTileIndex] = d;
+      persistDrafts();
+    }
+
+    function applyDraft(tab, index) {
+      const d = drafts[tab] && drafts[tab][index];
+      if (!d) return false;
+      const prefix = tab === 'home' ? 'home' : 'game';
+
+      document.getElementById(prefix + '_tile_type').value = d.type || '0';
+      updateTileType(tab);
+
+      document.getElementById(prefix + '_tile_title').value = d.title || '';
+      document.getElementById(prefix + '_tile_color').value = d.color || '#2A2A2A';
+
+      if (d.type === '1') {
+        document.getElementById(prefix + '_sensor_entity').value = d.sensor_entity || '';
+        document.getElementById(prefix + '_sensor_unit').value = d.sensor_unit || '';
+      } else if (d.type === '2') {
+        document.getElementById(prefix + '_scene_alias').value = d.scene_alias || '';
+      } else if (d.type === '3') {
+        document.getElementById(prefix + '_key_macro').value = d.key_macro || '';
+      }
+
+      updateTilePreview(tab);
+      return true;
+    }
 
     // Select a tile for editing
     function selectTile(index, tab) {
@@ -259,12 +327,16 @@ String WebAdminServer::getAdminPage() {
       const oldType = document.getElementById(prefix + '_tile_type');
       const oldEntity = document.getElementById(prefix + '_sensor_entity');
       const oldUnit = document.getElementById(prefix + '_sensor_unit');
+      const oldScene = document.getElementById(prefix + '_scene_alias');
+      const oldKey = document.getElementById(prefix + '_key_macro');
 
       if (oldTitle) oldTitle.replaceWith(oldTitle.cloneNode(true));
       if (oldColor) oldColor.replaceWith(oldColor.cloneNode(true));
       if (oldType) oldType.replaceWith(oldType.cloneNode(true));
       if (oldEntity) oldEntity.replaceWith(oldEntity.cloneNode(true));
       if (oldUnit) oldUnit.replaceWith(oldUnit.cloneNode(true));
+      if (oldScene) oldScene.replaceWith(oldScene.cloneNode(true));
+      if (oldKey) oldKey.replaceWith(oldKey.cloneNode(true));
 
       // Add new listeners
       const titleInput = document.getElementById(prefix + '_tile_title');
@@ -272,24 +344,33 @@ String WebAdminServer::getAdminPage() {
       const typeSelect = document.getElementById(prefix + '_tile_type');
       const entitySelect = document.getElementById(prefix + '_sensor_entity');
       const unitInput = document.getElementById(prefix + '_sensor_unit');
+      const sceneInput = document.getElementById(prefix + '_scene_alias');
+      const keyInput = document.getElementById(prefix + '_key_macro');
 
       if (titleInput) {
-        titleInput.addEventListener('input', () => updateTilePreview(tab));
+        titleInput.addEventListener('input', () => { updateTilePreview(tab); updateDraft(tab); });
       }
       if (colorInput) {
-        colorInput.addEventListener('input', () => updateTilePreview(tab));
+        colorInput.addEventListener('input', () => { updateTilePreview(tab); updateDraft(tab); });
       }
       if (typeSelect) {
-        typeSelect.addEventListener('change', () => updateTilePreview(tab));
+        typeSelect.addEventListener('change', () => { updateTilePreview(tab); updateDraft(tab); });
       }
       if (entitySelect) {
         entitySelect.addEventListener('change', () => {
           updateTilePreview(tab);
           updateSensorValuePreview(tab);
+          updateDraft(tab);
         });
       }
       if (unitInput) {
-        unitInput.addEventListener('input', () => updateSensorValuePreview(tab));
+        unitInput.addEventListener('input', () => { updateSensorValuePreview(tab); updateDraft(tab); });
+      }
+      if (sceneInput) {
+        sceneInput.addEventListener('input', () => { updateTilePreview(tab); updateDraft(tab); });
+      }
+      if (keyInput) {
+        keyInput.addEventListener('input', () => { updateTilePreview(tab); updateDraft(tab); });
       }
     }
 
@@ -340,6 +421,10 @@ String WebAdminServer::getAdminPage() {
 
       if (!tileElem) return;
 
+      const wasActive = tileElem.classList.contains('active');
+      const typeWas = tileElem.classList.contains('sensor') ? '1' :
+                      tileElem.classList.contains('scene')  ? '2' :
+                      tileElem.classList.contains('key')    ? '3' : '0';
       const title = document.getElementById(prefix + '_tile_title').value;
       const color = document.getElementById(prefix + '_tile_color').value;
       const type = document.getElementById(prefix + '_tile_type').value;
@@ -351,7 +436,8 @@ String WebAdminServer::getAdminPage() {
       if (type === '0') {
         // EMPTY: transparent, keine Klasse
         tileElem.classList.add('empty');
-        tileElem.innerHTML = '';  // Kein Content für leere Tiles!
+        tileElem.innerHTML = '';  // Kein Content fÃƒÂ¼r leere Tiles!
+        if (wasActive) tileElem.classList.add('active');
         return;
       } else if (type === '1') {
         // SENSOR
@@ -387,12 +473,21 @@ String WebAdminServer::getAdminPage() {
         // Fetch value if entity is selected
         if (entity) {
           tileElem.innerHTML = html;
+          if (wasActive) tileElem.classList.add('active');
           updateSensorValuePreview(tab);
           return;
         }
       }
 
       tileElem.innerHTML = html;
+      if (wasActive) tileElem.classList.add('active');
+
+      // Preserve selection when type changes from empty -> scene/key/etc.
+      if (typeWas !== type && wasActive) {
+        tileElem.classList.add('active');
+        const settingsId = tab === 'home' ? 'homeSettings' : 'gameSettings';
+        document.getElementById(settingsId)?.classList.remove('hidden');
+      }
     }
 
     // Load tile data from server
@@ -418,6 +513,15 @@ String WebAdminServer::getAdminPage() {
             document.getElementById(prefix + '_scene_alias').value = data.scene_alias || '';
           } else if (data.type === 3) { // Key
             document.getElementById(prefix + '_key_macro').value = data.key_macro || '';
+          }
+
+          // Ensure selection stays highlighted after async load
+          const tileElem = document.getElementById(tab + '-tile-' + index);
+          if (tileElem) tileElem.classList.add('active');
+
+          // Apply unsaved draft if present
+          if (!applyDraft(tab, index)) {
+            updateTilePreview(tab);
           }
         });
     }
@@ -484,6 +588,7 @@ String WebAdminServer::getAdminPage() {
         if (data.success) {
           console.log('Kachel gespeichert:', {tab, index: currentTileIndex});
           showNotification('Kachel gespeichert & Display aktualisiert!');
+          clearDraft(tab, currentTileIndex);
         } else {
           console.error('Save failed:', data.error);
           showNotification('Fehler: ' + (data.error || 'Unbekannt'), false);
@@ -546,9 +651,20 @@ String WebAdminServer::getAdminPage() {
         });
       })
       .catch(err => console.error('Fehler beim Laden der Sensorwerte:', err));
+
+      // Re-apply active highlighting + settings panel for current selection
+      if (currentTileIndex !== -1) {
+        const tab = currentTileTab === 'game' ? 'game' : 'home';
+        const settingsId = tab === 'home' ? 'homeSettings' : 'gameSettings';
+        document.getElementById(settingsId)?.classList.remove('hidden');
+        document.querySelectorAll('.tile').forEach(t => t.classList.remove('active'));
+        const activeTile = document.getElementById(tab + '-tile-' + currentTileIndex);
+        if (activeTile) activeTile.classList.add('active');
+      }
     }
 
     window.onload = function() {
+      loadDraftsFromStorage();
       // Activate first tab by default
       document.querySelector('.tab-btn').click();
 
@@ -783,7 +899,7 @@ String WebAdminServer::getAdminPage() {
 
       <!-- Tab 3: Game Controls (12 Buttons) -->
       <div id="tab-game" class="tab-content">
-        <p class="hint">Konfiguriere 12 Buttons für USB-Tastatur-Makros (z.B. Star Citizen). Gerät muss per USB am PC angeschlossen sein.</p>
+        <p class="hint">Konfiguriere 12 Buttons fÃƒÂ¼r USB-Tastatur-Makros (z.B. Star Citizen). GerÃƒÂ¤t muss per USB am PC angeschlossen sein.</p>
         <form action="/game_controls" method="POST">
           <div class="layout-grid">
 )html";
@@ -804,12 +920,12 @@ String WebAdminServer::getAdminPage() {
     // Aktuelles Makro anzeigen (aus key_code + modifier rekonstruieren)
     String currentMacro = "";
     if (gameData.buttons[i].key_code != 0) {
-      // Modifier hinzufügen
+      // Modifier hinzufÃƒÂ¼gen
       if (gameData.buttons[i].modifier & 0x01) currentMacro += "ctrl+";
       if (gameData.buttons[i].modifier & 0x02) currentMacro += "shift+";
       if (gameData.buttons[i].modifier & 0x04) currentMacro += "alt+";
 
-      // Taste hinzufügen (Scancode zu Buchstabe konvertieren)
+      // Taste hinzufÃƒÂ¼gen (Scancode zu Buchstabe konvertieren)
       uint8_t code = gameData.buttons[i].key_code;
       if (code >= 0x04 && code <= 0x1D) currentMacro += (char)('a' + (code - 0x04));
       else if (code >= 0x1E && code <= 0x27) currentMacro += (char)('1' + (code - 0x1E));
@@ -845,7 +961,7 @@ String WebAdminServer::getAdminPage() {
 
       <!-- Tab 4: Tiles Home Editor -->
       <div id="tab-tiles-home" class="tab-content">
-        <p class="hint">Klicke auf eine Kachel, um sie zu bearbeiten. Wähle den Typ (Sensor/Szene/Key) und passe die Einstellungen an.</p>
+        <p class="hint">Klicke auf eine Kachel, um sie zu bearbeiten. WÃƒÂ¤hle den Typ (Sensor/Szene/Key) und passe die Einstellungen an.</p>
         <div class="tile-editor">
           <!-- Grid Preview -->
           <div class="tile-grid">
@@ -995,7 +1111,7 @@ String WebAdminServer::getAdminPage() {
   html += R"html(
               </select>
               <label>Einheit</label>
-              <input type="text" id="home_sensor_unit" placeholder="z.B. °C">
+              <input type="text" id="home_sensor_unit" placeholder="z.B. Ã‚Â°C">
             </div>
 
             <!-- Scene Fields -->
@@ -1033,7 +1149,7 @@ String WebAdminServer::getAdminPage() {
 
       <!-- Tab 5: Tiles Game Editor -->
       <div id="tab-tiles-game" class="tab-content">
-        <p class="hint">Klicke auf eine Kachel, um sie zu bearbeiten. Wähle den Typ (Sensor/Szene/Key) und passe die Einstellungen an.</p>
+        <p class="hint">Klicke auf eine Kachel, um sie zu bearbeiten. WÃƒÂ¤hle den Typ (Sensor/Szene/Key) und passe die Einstellungen an.</p>
         <div class="tile-editor">
           <!-- Grid Preview -->
           <div class="tile-grid">
@@ -1183,7 +1299,7 @@ String WebAdminServer::getAdminPage() {
   html += R"html(
               </select>
               <label>Einheit</label>
-              <input type="text" id="game_sensor_unit" placeholder="z.B. °C">
+              <input type="text" id="game_sensor_unit" placeholder="z.B. Ã‚Â°C">
             </div>
 
             <!-- Scene Fields -->
@@ -1299,3 +1415,5 @@ String WebAdminServer::getStatusJSON() {
   json += "}";
   return json;
 }
+
+

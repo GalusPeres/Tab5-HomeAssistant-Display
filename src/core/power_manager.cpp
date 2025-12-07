@@ -52,6 +52,17 @@ void PowerManager::update(uint32_t last_activity_time) {
   if (is_display_sleeping) return;
   uint32_t now = millis();
 
+  // Schlaf-Sperre aktiv? -> Keine Sleep-Checks, optional Timeout pruefen
+  if (sleep_blocked) {
+    if (sleep_block_until != 0 && (int32_t)(now - sleep_block_until) >= 0) {
+      sleep_blocked = false;  // Sperre abgelaufen
+    } else {
+      // Sicherstellen, dass wir nicht in den Low-Power-Sleep fallen
+      setHighPerformance(true);
+      return;
+    }
+  }
+
   if (is_high_performance && (now - last_activity_time > IDLE_TIMEOUT_MS)) {
     setHighPerformance(false); 
   }
@@ -105,4 +116,24 @@ void PowerManager::wakeFromDisplaySleep() {
 }
 
 void PowerManager::updatePowerMode() {
+}
+
+void PowerManager::blockSleep(uint32_t duration_ms) {
+  sleep_blocked = true;
+  sleep_block_until = duration_ms ? millis() + duration_ms : 0;
+  if (is_display_sleeping) {
+    wakeFromDisplaySleep();
+  }
+  setHighPerformance(true);
+}
+
+void PowerManager::allowSleep() {
+  sleep_blocked = false;
+  sleep_block_until = 0;
+}
+
+bool PowerManager::isSleepBlocked() const {
+  if (!sleep_blocked) return false;
+  if (sleep_block_until == 0) return true;
+  return (int32_t)(millis() - sleep_block_until) < 0;
 }

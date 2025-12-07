@@ -89,27 +89,53 @@ static String buildHaStatestreamTopic(const String& entity_id) {
 
 static void rebuildDynamicRoutes(std::vector<DynamicSensorRoute>& routes) {
   routes.clear();
-  const HaBridgeConfigData& cfg = haBridgeConfig.get();
-  for (uint8_t slot = 0; slot < HA_SENSOR_SLOT_COUNT; ++slot) {
-    const String& entity = cfg.sensor_slots[slot];
-    if (!entity.length()) {
-      continue;
-    }
-    String topic = buildHaStatestreamTopic(entity);
+
+  auto add_route = [&](const String& entity, int slot_index) {
+    String ent = entity;
+    ent.trim();
+    if (!ent.length()) return;
+
+    String topic = buildHaStatestreamTopic(ent);
     auto it = std::find_if(
         routes.begin(),
         routes.end(),
         [&](const DynamicSensorRoute& r) { return r.topic == topic; });
+
     if (it == routes.end()) {
       DynamicSensorRoute route;
       route.topic = topic;
-      route.entity_id = entity;
-      route.slots.push_back(slot);
+      route.entity_id = ent;
+      if (slot_index >= 0) {
+        route.slots.push_back(static_cast<uint8_t>(slot_index));
+      }
       routes.push_back(route);
     } else {
-      it->slots.push_back(slot);
+      if (slot_index >= 0) {
+        it->slots.push_back(static_cast<uint8_t>(slot_index));
+      }
+      if (!it->entity_id.equalsIgnoreCase(ent)) {
+        it->entity_id = ent;  // prefer latest casing
+      }
     }
+  };
+
+  const HaBridgeConfigData& cfg = haBridgeConfig.get();
+  // Legacy HA sensor slots
+  for (uint8_t slot = 0; slot < HA_SENSOR_SLOT_COUNT; ++slot) {
+    add_route(cfg.sensor_slots[slot], slot);
   }
+
+  // Sensor tiles from Home/Game grids (no slot index, entity-based update)
+  auto add_grid_entities = [&](const TileGridConfig& grid) {
+    for (uint8_t i = 0; i < TILES_PER_GRID; ++i) {
+      const Tile& tile = grid.tiles[i];
+      if (tile.type == TILE_SENSOR && tile.sensor_entity.length()) {
+        add_route(tile.sensor_entity, -1);
+      }
+    }
+  };
+  add_grid_entities(tileConfig.getHomeGrid());
+  add_grid_entities(tileConfig.getGameGrid());
 }
 
 static bool tryHandleDynamicSensor(const char* topic, const char* payload) {
@@ -136,6 +162,8 @@ static char large_buf[LARGE_BUF];
 
 // ========== MQTT Callback (Topic-Routing) ==========
 void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
+  yield();  // Webserver atmen lassen!
+
   const char* apply_topic = networkManager.getBridgeApplyTopic();
   if (apply_topic && strcmp(topic, apply_topic) == 0) {
     static char cfg_buf[8192];  // Reduziert fuer mehr verfuegbaren Heap
@@ -145,11 +173,15 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
     size_t copy_len = length < sizeof(cfg_buf) - 1 ? length : sizeof(cfg_buf) - 1;
     memcpy(cfg_buf, payload, copy_len);
     cfg_buf[copy_len] = '\0';
+    yield();  // Nach großem Copy
     Serial.printf("[Bridge] apply-topic hit (%u bytes)\n", (unsigned)copy_len);
     if (haBridgeConfig.applyJson(cfg_buf)) {
       Serial.println("[Bridge] Konfiguration von HA empfangen");
+      yield();  // Nach JSON Parse
       networkManager.publishBridgeConfig();
+      yield();  // Nach Publish
       home_reload_layout();
+      yield();  // Nach Layout Reload
       mqttReloadDynamicSlots();
     } else {
       Serial.println("[Bridge] Ungueltige Bridge-Konfiguration empfangen");
@@ -180,6 +212,7 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
   memcpy(small_buf, payload, copy_len);
   small_buf[copy_len] = '\0';
   if (tryHandleDynamicSensor(topic, small_buf)) {
+    yield();  // Nach Sensor-Update
     return;
   }
 
