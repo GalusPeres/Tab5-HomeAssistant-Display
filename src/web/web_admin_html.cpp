@@ -125,6 +125,11 @@ String WebAdminServer::getAdminPage() {
       border:3px solid #4A9EFF;
       box-shadow:0 0 12px rgba(74,158,255,0.6);
     }
+    .tile.dragging {
+       opacity:0.6;
+       border-radius:11px;
+       border:3px dashed #4A9EFF;
+     }
     .tile.active:hover {
       opacity:1;
       filter:none;
@@ -663,47 +668,77 @@ String WebAdminServer::getAdminPage() {
       }
     }
 
-    // Drag & Drop Swap (Tile reorder)
-    let dragSource = null;
+  // Drag & Drop Swap (Tile reorder)
+  let dragSource = null;
 
-    function enableTileDrag(tab) {
-      const tiles = document.querySelectorAll('#tab-tiles-' + tab + ' .tile');
-      tiles.forEach(tile => {
-        tile.addEventListener('dragstart', (e) => {
-          dragSource = { tab, index: parseInt(tile.dataset.index) };
-          e.dataTransfer.effectAllowed = 'move';
-        });
-        tile.addEventListener('dragover', (e) => {
-          e.preventDefault();
-        });
-        tile.addEventListener('drop', (e) => {
-          e.preventDefault();
-          if (!dragSource || dragSource.tab !== tab) return;
-          const targetIndex = parseInt(tile.dataset.index);
-          if (isNaN(targetIndex) || targetIndex === dragSource.index) return;
-          swapTilesOnServer(tab, dragSource.index, targetIndex);
-        });
+  function enableTileDrag(tab) {
+    const tiles = document.querySelectorAll('#tab-tiles-' + tab + ' .tile');
+    tiles.forEach(tile => {
+      tile.addEventListener('dragstart', (e) => {
+        dragSource = { tab, index: parseInt(tile.dataset.index) };
+        e.dataTransfer.effectAllowed = 'move';
+        tile.classList.add('dragging');
+        if (e.dataTransfer.setDragImage) {
+          e.dataTransfer.setDragImage(tile, tile.clientWidth / 2, tile.clientHeight / 2);
+        }
       });
-    }
+      tile.addEventListener('dragend', () => {
+        tile.classList.remove('dragging');
+        dragSource = null;
+      });
+      tile.addEventListener('dragover', (e) => {
+        e.preventDefault();
+      });
+      tile.addEventListener('drop', (e) => {
+        e.preventDefault();
+        if (!dragSource || dragSource.tab !== tab) return;
+        const targetIndex = parseInt(tile.dataset.index);
+        if (isNaN(targetIndex) || targetIndex === dragSource.index) return;
+        swapTilesOnServer(tab, dragSource.index, targetIndex);
+      });
+    });
+  }
 
-    function swapTilesOnServer(tab, fromIndex, toIndex) {
-      const fd = new FormData();
-      fd.append('tab', tab);
-      fd.append('from', fromIndex);
-      fd.append('to', toIndex);
-      fetch('/api/tiles/reorder', {
-        method: 'POST',
-        body: fd
-      }).then(res => {
-        if (!res.ok) throw new Error('http');
-        return res.json();
-      }).then(() => {
-        showNotification('Reihenfolge gespeichert');
-        setTimeout(() => location.reload(), 400);
-      }).catch(() => {
-        showNotification('Tausch fehlgeschlagen', true);
-      });
-    }
+  function applyDomSwap(tab, fromIndex, toIndex) {
+    const grid = document.querySelector('#tab-tiles-' + tab + ' .tile-grid');
+    if (!grid) return;
+    const tiles = Array.from(grid.children);
+    const a = tiles[fromIndex];
+    const b = tiles[toIndex];
+    if (!a || !b) return;
+    // Swap positions
+    grid.insertBefore(a, b);
+    grid.insertBefore(b, tiles[fromIndex]);
+    // Reindex ids/dataset to keep editing consistent
+    Array.from(grid.children).forEach((el, idx) => {
+      el.dataset.index = idx.toString();
+      el.id = tab + '-tile-' + idx;
+      const title = el.querySelector('.tile-title');
+      if (title) title.id = tab + '-tile-' + idx + '-title';
+      const value = el.querySelector('.tile-value');
+      if (value) value.id = tab + '-tile-' + idx + '-value';
+    });
+  }
+
+  function swapTilesOnServer(tab, fromIndex, toIndex) {
+    const fd = new FormData();
+    fd.append('tab', tab);
+    fd.append('from', fromIndex);
+    fd.append('to', toIndex);
+    fetch('/api/tiles/reorder', {
+      method: 'POST',
+      body: fd
+    }).then(res => {
+      if (!res.ok) throw new Error('http');
+      return res.json();
+    }).then(() => {
+      applyDomSwap(tab, fromIndex, toIndex);
+      loadSensorValues();
+      showNotification('Reihenfolge gespeichert');
+    }).catch(() => {
+      showNotification('Tausch fehlgeschlagen', true);
+    });
+  }
 
     window.onload = function() {
       loadDraftsFromStorage();
