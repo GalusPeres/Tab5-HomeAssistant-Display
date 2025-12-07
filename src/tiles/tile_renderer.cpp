@@ -110,11 +110,11 @@ void render_tile_grid(lv_obj_t* parent, const TileGridConfig& config, GridType g
 
     render_tile(parent, col, row, config.tiles[i], i, grid_type, scene_cb);
 
-    // PROGRESSIVES RENDERING: Nach jedem Tile LVGL verarbeiten lassen!
+    // PROGRESSIVES RENDERING: Pause zwischen Tiles (verhindert Crash)
     yield();                    // Watchdog füttern
-    lv_timer_handler();        // LVGL verarbeitet das neue Tile
-    delay(50);                 // 50ms Pause (statt 5ms) für LVGL Processing
+    delay(10);                 // 10ms Pause für System Processing (120ms total)
     yield();                   // Nochmal Watchdog
+    // KEIN lv_timer_handler() hier! Sonst werden unfertige Tiles gezeichnet!
 
     Serial.printf("[TileRenderer] ✓ Tile %d/%d fertig\n", i + 1, TILES_PER_GRID);
   }

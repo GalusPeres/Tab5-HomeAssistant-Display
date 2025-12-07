@@ -116,6 +116,13 @@ void UIManager::buildUI(scene_publish_cb_t scene_cb, hotspot_start_cb_t hotspot_
   tab_panels[2] = createTabPanel(tab_content_container);
   tab_panels[3] = createTabPanel(tab_content_container);
 
+  // SIDEBAR ZUERST RENDERN (vor Tiles!)
+  Serial.println("[UI] Rendere Sidebar...");
+  lv_timer_handler();          // Sidebar zeichnen (mit Platzhalter --:--)
+  delay(100);                  // Sicherstellen dass Sidebar fertig ist
+  Serial.println("[UI] Sidebar fertig, lade nun Tiles...");
+  // updateStatusbar() wird später in Loop aufgerufen wenn Fonts geladen sind
+
   build_tiles_home_tab(tab_panels[0], scene_cb);
   build_tiles_game_tab(tab_panels[1]);
   build_weather_tab(tab_panels[2]);
