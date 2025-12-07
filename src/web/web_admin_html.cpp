@@ -663,6 +663,48 @@ String WebAdminServer::getAdminPage() {
       }
     }
 
+    // Drag & Drop Swap (Tile reorder)
+    let dragSource = null;
+
+    function enableTileDrag(tab) {
+      const tiles = document.querySelectorAll('#tab-tiles-' + tab + ' .tile');
+      tiles.forEach(tile => {
+        tile.addEventListener('dragstart', (e) => {
+          dragSource = { tab, index: parseInt(tile.dataset.index) };
+          e.dataTransfer.effectAllowed = 'move';
+        });
+        tile.addEventListener('dragover', (e) => {
+          e.preventDefault();
+        });
+        tile.addEventListener('drop', (e) => {
+          e.preventDefault();
+          if (!dragSource || dragSource.tab !== tab) return;
+          const targetIndex = parseInt(tile.dataset.index);
+          if (isNaN(targetIndex) || targetIndex === dragSource.index) return;
+          swapTilesOnServer(tab, dragSource.index, targetIndex);
+        });
+      });
+    }
+
+    function swapTilesOnServer(tab, fromIndex, toIndex) {
+      const fd = new FormData();
+      fd.append('tab', tab);
+      fd.append('from', fromIndex);
+      fd.append('to', toIndex);
+      fetch('/api/tiles/reorder', {
+        method: 'POST',
+        body: fd
+      }).then(res => {
+        if (!res.ok) throw new Error('http');
+        return res.json();
+      }).then(() => {
+        showNotification('Reihenfolge gespeichert');
+        setTimeout(() => location.reload(), 400);
+      }).catch(() => {
+        showNotification('Tausch fehlgeschlagen', true);
+      });
+    }
+
     window.onload = function() {
       loadDraftsFromStorage();
       // Activate first tab by default
@@ -673,6 +715,10 @@ String WebAdminServer::getAdminPage() {
 
       // Refresh sensor values every 5 seconds
       setInterval(loadSensorValues, 5000);
+
+      // Enable drag & drop for both grids
+      enableTileDrag('home');
+      enableTileDrag('game');
     };
   </script>
 </head>
@@ -1015,7 +1061,9 @@ String WebAdminServer::getAdminPage() {
 
     html += "<div class=\"";
     html += cssClass;
-    html += "\" id=\"home-tile-";
+    html += "\" data-index=\"";
+    html += String(i);
+    html += "\" draggable=\"true\" id=\"home-tile-";
     html += String(i);
     html += "\" style=\"";
     html += tileStyle;
@@ -1203,7 +1251,9 @@ String WebAdminServer::getAdminPage() {
 
     html += "<div class=\"";
     html += cssClass;
-    html += "\" id=\"game-tile-";
+    html += "\" data-index=\"";
+    html += String(i);
+    html += "\" draggable=\"true\" id=\"game-tile-";
     html += String(i);
     html += "\" style=\"";
     html += tileStyle;

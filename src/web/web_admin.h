@@ -41,6 +41,7 @@ public:
   void handleRestart();
   void handleGetTiles();
   void handleSaveTiles();
+  void handleReorderTiles();
   void handleGetSensorValues();
 
   // HTML-Seiten (implemented in web_admin_html.cpp)

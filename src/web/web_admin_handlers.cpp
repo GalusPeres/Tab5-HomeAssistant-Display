@@ -8,6 +8,7 @@
 #include "src/tiles/tile_config.h"
 #include "src/ui/tab_tiles_home.h"
 #include "src/ui/tab_tiles_game.h"
+#include <algorithm>
 
 // Forward declaration - kein Include von tab_game.h nötig
 extern void game_reload_layout();
@@ -443,6 +444,38 @@ void WebAdminServer::handleSaveTiles() {
     server.send(200, "application/json", "{\"success\":true}");
   } else {
     Serial.printf("[WebAdmin] Fehler beim Speichern von Tile %s[%d]\n", tab.c_str(), index);
+    server.send(500, "application/json", "{\"success\":false,\"error\":\"Save failed\"}");
+  }
+}
+
+void WebAdminServer::handleReorderTiles() {
+  // POST /api/tiles/reorder with tab=home|game, from, to
+  if (!server.hasArg("tab") || !server.hasArg("from") || !server.hasArg("to")) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Missing parameters\"}");
+    return;
+  }
+
+  String tab = server.arg("tab");
+  int from = server.arg("from").toInt();
+  int to = server.arg("to").toInt();
+
+  if ((tab != "home" && tab != "game") || from < 0 || from >= TILES_PER_GRID || to < 0 || to >= TILES_PER_GRID) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid parameters\"}");
+    return;
+  }
+
+  TileGridConfig& grid = (tab == "home") ? tileConfig.getHomeGrid() : tileConfig.getGameGrid();
+  std::swap(grid.tiles[from], grid.tiles[to]);
+
+  bool success = tileConfig.save(tileConfig.getHomeGrid(), tileConfig.getGameGrid());
+  if (success) {
+    if (tab == "home") {
+      tiles_home_reload_layout();
+    } else {
+      tiles_game_reload_layout();
+    }
+    server.send(200, "application/json", "{\"success\":true}");
+  } else {
     server.send(500, "application/json", "{\"success\":false,\"error\":\"Save failed\"}");
   }
 }
