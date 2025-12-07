@@ -38,8 +38,17 @@ struct SensorTileWidgets {
 static SensorTileWidgets g_home_sensors[TILES_PER_GRID];
 static SensorTileWidgets g_game_sensors[TILES_PER_GRID];
 
+static void clear_sensor_widgets(GridType grid_type) {
+  SensorTileWidgets* target = (grid_type == GridType::GAME) ? g_game_sensors : g_home_sensors;
+  for (size_t i = 0; i < TILES_PER_GRID; ++i) {
+    target[i].value_label = nullptr;
+    target[i].unit_label = nullptr;
+  }
+}
+
 /* === Thread-Safe Update Queue (MQTT → Main Loop) === */
 struct SensorUpdate {
+  GridType grid_type;
   uint8_t grid_index;
   String value;
   String unit;
@@ -52,7 +61,11 @@ static volatile uint8_t g_queue_head = 0;
 static volatile uint8_t g_queue_tail = 0;
 
 // MQTT Callback ruft das auf (thread-safe!)
-void queue_sensor_tile_update(uint8_t grid_index, const char* value, const char* unit) {
+void queue_sensor_tile_update(GridType grid_type, uint8_t grid_index, const char* value, const char* unit) {
+  if (grid_index >= TILES_PER_GRID || !value) {
+    return;
+  }
+
   uint8_t next_head = (g_queue_head + 1) % QUEUE_SIZE;
 
   if (next_head == g_queue_tail) {
@@ -60,6 +73,7 @@ void queue_sensor_tile_update(uint8_t grid_index, const char* value, const char*
     return;
   }
 
+  g_update_queue[g_queue_head].grid_type = grid_type;
   g_update_queue[g_queue_head].grid_index = grid_index;
   g_update_queue[g_queue_head].value = String(value);
   g_update_queue[g_queue_head].unit = unit ? String(unit) : "";
@@ -74,7 +88,7 @@ void process_sensor_update_queue() {
     SensorUpdate& upd = g_update_queue[g_queue_tail];
 
     if (upd.valid) {
-      update_sensor_tile_value(upd.grid_index, upd.value.c_str(),
+      update_sensor_tile_value(upd.grid_type, upd.grid_index, upd.value.c_str(),
                               upd.unit.length() > 0 ? upd.unit.c_str() : nullptr);
       upd.valid = false;
     }
@@ -95,6 +109,9 @@ void render_tile_grid(lv_obj_t* parent, const TileGridConfig& config, GridType g
   uint32_t psram_before = ESP.getFreePsram();
   Serial.printf("[TileRenderer] Lade %d Tiles... | Heap: %u KB | PSRAM: %u KB\n",
                 TILES_PER_GRID, heap_before / 1024, psram_before / 1024);
+
+  // Reset sensor widget pointers for this grid to avoid stale references
+  clear_sensor_widgets(grid_type);
 
   for (int i = 0; i < TILES_PER_GRID; ++i) {
     int row = i / 3;
@@ -328,23 +345,30 @@ void render_empty_tile(lv_obj_t* parent, int col, int row) {
       LV_GRID_ALIGN_STRETCH, row, 1);
 }
 
-void update_sensor_tile_value(uint8_t grid_index, const char* value, const char* unit) {
-  // TODO: Bestimme ob Home oder Game Grid
-  if (grid_index < TILES_PER_GRID && g_home_sensors[grid_index].value_label) {
-    String displayValue = String(value);
-    displayValue.trim();
-
-    // Zeige "--" wenn leer oder unavailable
-    if (displayValue.length() == 0 || displayValue.equalsIgnoreCase("unavailable")) {
-      displayValue = "--";
-    }
-
-    // Kombiniere Wert + Einheit in einem Label (gleiche Größe)
-    String combined = displayValue;
-    if (unit && strlen(unit) > 0 && displayValue != "--") {
-      combined += " ";
-      combined += unit;
-    }
-    lv_label_set_text(g_home_sensors[grid_index].value_label, combined.c_str());
+void update_sensor_tile_value(GridType grid_type, uint8_t grid_index, const char* value, const char* unit) {
+  if (grid_index >= TILES_PER_GRID) {
+    return;
   }
+
+  SensorTileWidgets* target = (grid_type == GridType::GAME) ? g_game_sensors : g_home_sensors;
+  lv_obj_t* value_label = target[grid_index].value_label;
+  if (!value_label) {
+    return;
+  }
+
+  String displayValue = value ? String(value) : String();
+  displayValue.trim();
+
+  // Zeige "--" wenn leer oder unavailable
+  if (displayValue.length() == 0 || displayValue.equalsIgnoreCase("unavailable")) {
+    displayValue = "--";
+  }
+
+  // Kombiniere Wert + Einheit in einem Label (gleiche Größe)
+  String combined = displayValue;
+  if (unit && strlen(unit) > 0 && displayValue != "--") {
+    combined += " ";
+    combined += unit;
+  }
+  lv_label_set_text(value_label, combined.c_str());
 }

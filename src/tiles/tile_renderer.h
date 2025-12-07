@@ -25,10 +25,10 @@ void render_key_tile(lv_obj_t* parent, int col, int row, const Tile& tile, uint8
 void render_empty_tile(lv_obj_t* parent, int col, int row);
 
 // Update-Funktionen (für Sensoren)
-void update_sensor_tile_value(uint8_t grid_index, const char* value, const char* unit = nullptr);
+void update_sensor_tile_value(GridType grid_type, uint8_t grid_index, const char* value, const char* unit = nullptr);
 
 // THREAD-SAFE: Queue für Sensor-Updates (MQTT Callback → Main Loop)
-void queue_sensor_tile_update(uint8_t grid_index, const char* value, const char* unit = nullptr);
+void queue_sensor_tile_update(GridType grid_type, uint8_t grid_index, const char* value, const char* unit = nullptr);
 void process_sensor_update_queue();  // Im Main Loop VOR lv_timer_handler() aufrufen!
 
 #endif // TILE_RENDERER_H

@@ -4,6 +4,7 @@
 #include "src/network/ha_bridge_config.h"
 #include "src/ui/tab_home.h"
 #include "src/ui/tab_tiles_home.h"
+#include "src/ui/tab_tiles_game.h"
 #include "src/ui/tab_solar.h"
 #include "src/tiles/tile_config.h"
 #include <PubSubClient.h>
@@ -147,6 +148,7 @@ static bool tryHandleDynamicSensor(const char* topic, const char* payload) {
       }
       // Update new tile-based system (display)
       tiles_home_update_sensor_by_entity(route.entity_id.c_str(), payload);
+      tiles_game_update_sensor_by_entity(route.entity_id.c_str(), payload);
       // Update sensor values map (for web interface)
       haBridgeConfig.updateSensorValue(route.entity_id, payload);
       return true;

@@ -10,9 +10,12 @@ static const int GRID_PAD = 24;
 
 /* === Globale State === */
 static lv_obj_t* g_tiles_game_grid = nullptr;
+static scene_publish_cb_t g_tiles_game_scene_cb = nullptr;
 
 /* === Aufbau Tiles-Game-Tab === */
-void build_tiles_game_tab(lv_obj_t *parent) {
+void build_tiles_game_tab(lv_obj_t *parent, scene_publish_cb_t scene_cb) {
+  g_tiles_game_scene_cb = scene_cb;
+
   lv_obj_set_style_bg_color(parent, lv_color_hex(0x000000), 0);
   lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
   lv_obj_set_scroll_dir(parent, LV_DIR_VER);
@@ -54,7 +57,23 @@ void tiles_game_reload_layout() {
 
   // Render tile grid using new unified system
   const TileGridConfig& config = tileConfig.getGameGrid();
-  render_tile_grid(g_tiles_game_grid, config, GridType::GAME, nullptr);
+  render_tile_grid(g_tiles_game_grid, config, GridType::GAME, g_tiles_game_scene_cb);
 
   Serial.println("[TilesGame] Layout neu geladen");
+}
+
+void tiles_game_update_sensor_by_entity(const char* entity_id, const char* value) {
+  if (!entity_id || !value) return;
+
+  const TileGridConfig& config = tileConfig.getGameGrid();
+
+  // Find tile with matching sensor_entity
+  for (uint8_t i = 0; i < TILES_PER_GRID; i++) {
+    const Tile& tile = config.tiles[i];
+    if (tile.type == TILE_SENSOR && tile.sensor_entity.equalsIgnoreCase(entity_id)) {
+      const char* unit = tile.sensor_unit.length() > 0 ? tile.sensor_unit.c_str() : nullptr;
+      queue_sensor_tile_update(GridType::GAME, i, value, unit);
+      Serial.printf("[TilesGame] Sensor %s@%u queued: %s %s\n", entity_id, i, value, unit ? unit : "");
+    }
+  }
 }

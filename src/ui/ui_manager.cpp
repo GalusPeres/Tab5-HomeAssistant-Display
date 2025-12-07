@@ -124,7 +124,7 @@ void UIManager::buildUI(scene_publish_cb_t scene_cb, hotspot_start_cb_t hotspot_
   // updateStatusbar() wird später in Loop aufgerufen wenn Fonts geladen sind
 
   build_tiles_home_tab(tab_panels[0], scene_cb);
-  build_tiles_game_tab(tab_panels[1]);
+  build_tiles_game_tab(tab_panels[1], scene_cb);
   build_weather_tab(tab_panels[2]);
   build_settings_tab(tab_panels[3], hotspot_cb);
 
