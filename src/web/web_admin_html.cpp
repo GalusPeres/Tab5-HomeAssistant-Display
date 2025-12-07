@@ -683,6 +683,9 @@ String WebAdminServer::getAdminPage() {
           dragSource = { tab, index: parseInt(tile.dataset.index) };
           e.dataTransfer.effectAllowed = 'move';
           tile.classList.add('dragging');
+          if (e.dataTransfer.setDragImage) {
+            e.dataTransfer.setDragImage(tile, tile.clientWidth / 2, tile.clientHeight / 2);
+          }
         });
         tile.addEventListener('dragend', () => {
           tile.classList.remove('dragging');
@@ -707,7 +710,29 @@ String WebAdminServer::getAdminPage() {
       });
     }
 
-  function swapTilesOnServer(tab, fromIndex, toIndex) {
+    function applyDomSwap(tab, fromIndex, toIndex) {
+      const grid = document.querySelector('#tab-tiles-' + tab + ' .tile-grid');
+      if (!grid) return;
+      const tiles = Array.from(grid.children);
+      const a = tiles[fromIndex];
+      const b = tiles[toIndex];
+      if (!a || !b) return;
+      // Swap nodes
+      const sibling = b.nextSibling;
+      grid.insertBefore(b, a);
+      grid.insertBefore(a, sibling);
+      // Reindex ids/datasets to keep previews/updates consistent
+      Array.from(grid.children).forEach((el, idx) => {
+        el.dataset.index = idx.toString();
+        el.id = tab + '-tile-' + idx;
+        const title = el.querySelector('.tile-title');
+        if (title) title.id = tab + '-tile-' + idx + '-title';
+        const value = el.querySelector('.tile-value');
+        if (value) value.id = tab + '-tile-' + idx + '-value';
+      });
+    }
+
+    function swapTilesOnServer(tab, fromIndex, toIndex) {
       const fd = new FormData();
       fd.append('tab', tab);
       fd.append('from', fromIndex);
@@ -717,14 +742,23 @@ String WebAdminServer::getAdminPage() {
         body: fd
       }).then(res => {
         if (!res.ok) throw new Error('http');
-      return res.json();
-    }).then(() => {
-      showNotification('Reihenfolge gespeichert');
-      setTimeout(() => location.reload(), 300);
-    }).catch(() => {
-      showNotification('Tausch fehlgeschlagen', true);
-    });
-  }
+        return res.json();
+      }).then(() => {
+        // Lokale Arrays und DOM tauschen, dann Sensorwerte neu laden
+        try {
+          if (tab === 'home' && Array.isArray(homeTiles)) {
+            [homeTiles[fromIndex], homeTiles[toIndex]] = [homeTiles[toIndex], homeTiles[fromIndex]];
+          } else if (tab === 'game' && Array.isArray(gameTiles)) {
+            [gameTiles[fromIndex], gameTiles[toIndex]] = [gameTiles[toIndex], gameTiles[fromIndex]];
+          }
+        } catch (e) {}
+        applyDomSwap(tab, fromIndex, toIndex);
+        loadSensorValues();
+        showNotification('Reihenfolge gespeichert');
+      }).catch(() => {
+        showNotification('Tausch fehlgeschlagen', true);
+      });
+    }
 
     window.onload = function() {
       loadDraftsFromStorage();
