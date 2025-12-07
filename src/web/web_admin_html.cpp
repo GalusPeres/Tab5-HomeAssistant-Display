@@ -247,6 +247,9 @@ String WebAdminServer::getAdminPage() {
     let currentTileTab = 'home';
     let currentTileIndex = -1;
     let drafts = { home: {}, game: {} };
+    // Global tile configs for swap ops
+    let homeTilesData = [];
+    let gameTilesData = [];
 
     function persistDrafts() {
       try { localStorage.setItem('tileDrafts', JSON.stringify(drafts)); } catch (e) {}
@@ -630,6 +633,8 @@ String WebAdminServer::getAdminPage() {
         fetch('/api/tiles?tab=game').then(res => res.json())
       ])
       .then(([sensorValues, homeTiles, gameTiles]) => {
+        homeTilesData = homeTiles;
+        gameTilesData = gameTiles;
         console.log('Sensorwerte geladen:', sensorValues);
         console.log('Home Tiles:', homeTiles);
         console.log('Game Tiles:', gameTiles);
@@ -749,12 +754,12 @@ String WebAdminServer::getAdminPage() {
         if (!res.ok) throw new Error('http');
         return res.json();
       }).then(() => {
-        // Lokale Arrays tauschen
+        // Lokale Arrays tauschen (global stored)
         try {
-          if (tab === 'home' && Array.isArray(homeTiles)) {
-            [homeTiles[fromIndex], homeTiles[toIndex]] = [homeTiles[toIndex], homeTiles[fromIndex]];
-          } else if (tab === 'game' && Array.isArray(gameTiles)) {
-            [gameTiles[fromIndex], gameTiles[toIndex]] = [gameTiles[toIndex], gameTiles[fromIndex]];
+          if (tab === 'home' && Array.isArray(homeTilesData)) {
+            [homeTilesData[fromIndex], homeTilesData[toIndex]] = [homeTilesData[toIndex], homeTilesData[fromIndex]];
+          } else if (tab === 'game' && Array.isArray(gameTilesData)) {
+            [gameTilesData[fromIndex], gameTilesData[toIndex]] = [gameTilesData[toIndex], gameTilesData[fromIndex]];
           }
         } catch (e) {}
         // DOM umsortieren und Werte neu laden
