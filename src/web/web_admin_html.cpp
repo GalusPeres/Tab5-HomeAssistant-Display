@@ -633,6 +633,22 @@ String WebAdminServer::getAdminPage() {
       autoSaveTimers[tab] = setTimeout(() => saveTile(tab, true), 250);
     }
 
+    function resetTile(tab) {
+      if (currentTileIndex === -1) return;
+      const prefix = tab === 'home' ? 'home' : 'game';
+      document.getElementById(prefix + '_tile_type').value = '0';
+      document.getElementById(prefix + '_tile_title').value = '';
+      document.getElementById(prefix + '_tile_color').value = '#2A2A2A';
+      if (document.getElementById(prefix + '_sensor_entity')) document.getElementById(prefix + '_sensor_entity').value = '';
+      if (document.getElementById(prefix + '_sensor_unit')) document.getElementById(prefix + '_sensor_unit').value = '';
+      if (document.getElementById(prefix + '_scene_alias')) document.getElementById(prefix + '_scene_alias').value = '';
+      if (document.getElementById(prefix + '_key_macro')) document.getElementById(prefix + '_key_macro').value = '';
+      updateTileType(tab);
+      updateTilePreview(tab);
+      updateDraft(tab);
+      scheduleAutoSave(tab);
+    }
+
     // Save tile configuration
     function saveTile(tab, silent = false) {
       if (currentTileIndex === -1) return;
@@ -1377,7 +1393,10 @@ String WebAdminServer::getAdminPage() {
               <input type="text" id="home_key_macro" placeholder="z.B. ctrl+g">
               <div style="font-size:11px;color:#64748b;margin-top:4px;">Beispiele: g, ctrl+g, ctrl+shift+a</div>
             </div>
-            <div style="font-size:12px;color:#64748b;margin-top:8px;">Änderungen werden automatisch gespeichert.</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:#64748b;">
+              <span>Änderungen werden automatisch gespeichert.</span>
+              <button type="button" class="btn" style="padding:8px 12px;font-size:12px;min-width:90px;" onclick="resetTile('home')">Löschen</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1564,7 +1583,10 @@ String WebAdminServer::getAdminPage() {
               <input type="text" id="game_key_macro" placeholder="z.B. ctrl+g">
               <div style="font-size:11px;color:#64748b;margin-top:4px;">Beispiele: g, ctrl+g, ctrl+shift+a</div>
             </div>
-            <div style="font-size:12px;color:#64748b;margin-top:8px;">Änderungen werden automatisch gespeichert.</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:#64748b;">
+              <span>Änderungen werden automatisch gespeichert.</span>
+              <button type="button" class="btn" style="padding:8px 12px;font-size:12px;min-width:90px;" onclick="resetTile('game')">Löschen</button>
+            </div>
           </div>
         </div>
       </div>
