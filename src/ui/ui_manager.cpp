@@ -324,8 +324,13 @@ void UIManager::syncSystemTimeFromRtc() {
   int minute = dt.time.minutes;
 
   if (!is_valid_datetime(year, month, day, hour, minute)) {
+    Serial.printf("[RTC] Ignoriere unplausible Zeit: %04d-%02d-%02d %02d:%02d\n",
+                  year, month, day, hour, minute);
     return;
   }
+
+  Serial.printf("[RTC] Gelesen: %04d-%02d-%02d %02d:%02d (wird gesetzt)\n",
+                year, month, day, hour, minute);
 
   // Timezone anwenden, damit mktime lokale Zeit korrekt interpretiert
   setenv("TZ", TZ_EUROPE_BERLIN, 1);
