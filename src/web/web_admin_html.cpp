@@ -129,6 +129,9 @@ String WebAdminServer::getAdminPage() {
       opacity:0.6;
       border:3px dashed #4A9EFF;
     }
+    .tile.drop-target {
+       border:3px dashed #4A9EFF;
+    }
     .tile.active:hover {
       opacity:1;
       filter:none;
@@ -219,21 +222,24 @@ String WebAdminServer::getAdminPage() {
     }
   </style>
   <script>
-    function switchTab(tabName) {
-      // Hide all tabs
-      const tabs = document.querySelectorAll('.tab-content');
-      tabs.forEach(tab => tab.classList.remove('active'));
+  function switchTab(tabName) {
+    // Hide all tabs
+    const tabs = document.querySelectorAll('.tab-content');
+    tabs.forEach(tab => tab.classList.remove('active'));
 
-      // Remove active class from all buttons
-      const btns = document.querySelectorAll('.tab-btn');
-      btns.forEach(btn => btn.classList.remove('active'));
+    // Remove active class from all buttons
+    const btns = document.querySelectorAll('.tab-btn');
+    btns.forEach(btn => btn.classList.remove('active'));
 
-      // Show selected tab
-      document.getElementById(tabName).classList.add('active');
+    // Show selected tab
+    document.getElementById(tabName).classList.add('active');
 
-      // Highlight active button
-      event.target.classList.add('active');
-    }
+    // Highlight active button
+    event.target.classList.add('active');
+
+    // Persist active tab
+    try { localStorage.setItem('activeAdminTab', tabName); } catch (e) {}
+  }
 
     // Tile Editor State
     let currentTileTab = 'home';
@@ -680,13 +686,19 @@ String WebAdminServer::getAdminPage() {
         });
         tile.addEventListener('dragend', () => {
           tile.classList.remove('dragging');
+          tiles.forEach(t => t.classList.remove('drop-target'));
           dragSource = null;
         });
         tile.addEventListener('dragover', (e) => {
           e.preventDefault();
+          tile.classList.add('drop-target');
+        });
+        tile.addEventListener('dragleave', () => {
+          tile.classList.remove('drop-target');
         });
         tile.addEventListener('drop', (e) => {
           e.preventDefault();
+          tile.classList.remove('drop-target');
           if (!dragSource || dragSource.tab !== tab) return;
           const targetIndex = parseInt(tile.dataset.index);
           if (isNaN(targetIndex) || targetIndex === dragSource.index) return;
@@ -695,7 +707,7 @@ String WebAdminServer::getAdminPage() {
       });
     }
 
-    function swapTilesOnServer(tab, fromIndex, toIndex) {
+  function swapTilesOnServer(tab, fromIndex, toIndex) {
       const fd = new FormData();
       fd.append('tab', tab);
       fd.append('from', fromIndex);
@@ -705,19 +717,23 @@ String WebAdminServer::getAdminPage() {
         body: fd
       }).then(res => {
         if (!res.ok) throw new Error('http');
-        return res.json();
-      }).then(() => {
-        showNotification('Reihenfolge gespeichert');
-        setTimeout(() => location.reload(), 300);
-      }).catch(() => {
-        showNotification('Tausch fehlgeschlagen', true);
-      });
-    }
+      return res.json();
+    }).then(() => {
+      showNotification('Reihenfolge gespeichert');
+      setTimeout(() => location.reload(), 300);
+    }).catch(() => {
+      showNotification('Tausch fehlgeschlagen', true);
+    });
+  }
 
     window.onload = function() {
       loadDraftsFromStorage();
-      // Activate first tab by default
-      document.querySelector('.tab-btn').click();
+      // Activate saved tab or default to Tiles Home
+      let savedTab = null;
+      try { savedTab = localStorage.getItem('activeAdminTab'); } catch (e) {}
+      const targetTab = savedTab && document.getElementById(savedTab) ? savedTab : 'tab-tiles-home';
+      const targetBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => btn.getAttribute('onclick')?.includes(targetTab)) || document.querySelector('.tab-btn');
+      if (targetBtn) targetBtn.click();
 
       // Load sensor values
       loadSensorValues();
