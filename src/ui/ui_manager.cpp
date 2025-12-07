@@ -305,6 +305,8 @@ void UIManager::updateStatusbar() {
 
   char buf[48];
 
+  static uint32_t last_rtc_sync_ms = 0;
+
   bool have_time = false;
 
   int hour = 0, minute = 0, day = 0, month = 0, year = 0;
@@ -336,6 +338,23 @@ void UIManager::updateStatusbar() {
       year = dt.date.year;
       // Vermeide kurz falsche RTC-Zeit bevor NTP greift
       have_time = is_valid_datetime(year, month, day, hour, minute);
+    }
+  }
+
+  // Wenn Zeit aus NTP/System verfuegbar, RTC gelegentlich nachziehen
+  if (have_time && M5.Rtc.isEnabled()) {
+    uint32_t now_ms = millis();
+    if (last_rtc_sync_ms == 0 || (int32_t)(now_ms - last_rtc_sync_ms) > 60000) {
+      m5::rtc_datetime_t dt;
+      dt.date.year = year;
+      dt.date.month = month;
+      dt.date.date = day;
+      dt.time.hours = hour;
+      dt.time.minutes = minute;
+      dt.time.seconds = 0;
+      M5.Rtc.setDateTime(&dt);
+      last_rtc_sync_ms = now_ms;
+      Serial.printf("[RTC] NTP->RTC %04d-%02d-%02d %02d:%02d\n", year, month, day, hour, minute);
     }
   }
 
