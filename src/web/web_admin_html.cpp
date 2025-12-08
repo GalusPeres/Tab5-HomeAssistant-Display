@@ -1,6 +1,8 @@
 #include "src/web/web_admin.h"
 #include "src/web/web_admin_utils.h"
 #include <WiFi.h>
+#include <math.h>
+#include <stdlib.h>
 #include "src/core/config_manager.h"
 #include "src/network/ha_bridge_config.h"
 #include "src/game/game_controls_config.h"
@@ -11,6 +13,23 @@ String WebAdminServer::getAdminPage() {
   const HaBridgeConfigData& ha = haBridgeConfig.get();
   const auto sensorOptions = parseSensorList(ha.sensors_text);
   const auto sceneOptions = parseSceneList(ha.scene_alias_text);
+  auto formatSensorValue = [](const String& raw, uint8_t decimals) -> String {
+    String v = raw;
+    v.trim();
+    if (!v.length()) return String("--");
+    String lower = v;
+    lower.toLowerCase();
+    if (lower == "unavailable") return String("--");
+    if (decimals == 0xFF) return v;  // Keine Rundung gewünscht
+    String normalized = v;
+    normalized.replace(",", ".");
+    char* end = nullptr;
+    float f = strtof(normalized.c_str(), &end);
+    if (!end || end == normalized.c_str()) return v;  // Nicht numerisch
+    if (isnan(f) || isinf(f)) return v;
+    uint8_t d = decimals > 6 ? 6 : decimals;
+    return String(f, static_cast<unsigned int>(d));
+  };
 
   auto appendList = [&](String& target, const String& raw) {
     if (!raw.length()) {
@@ -302,6 +321,7 @@ String WebAdminServer::getAdminPage() {
         color: document.getElementById(prefix + '_tile_color')?.value || '#2A2A2A',
         sensor_entity: document.getElementById(prefix + '_sensor_entity')?.value || '',
         sensor_unit: document.getElementById(prefix + '_sensor_unit')?.value || '',
+        sensor_decimals: document.getElementById(prefix + '_sensor_decimals')?.value || '',
         scene_alias: document.getElementById(prefix + '_scene_alias')?.value || '',
         key_macro: document.getElementById(prefix + '_key_macro')?.value || ''
       };
@@ -323,6 +343,7 @@ String WebAdminServer::getAdminPage() {
       if (d.type === '1') {
         document.getElementById(prefix + '_sensor_entity').value = d.sensor_entity || '';
         document.getElementById(prefix + '_sensor_unit').value = d.sensor_unit || '';
+        if (document.getElementById(prefix + '_sensor_decimals')) document.getElementById(prefix + '_sensor_decimals').value = d.sensor_decimals || '';
       } else if (d.type === '2') {
         document.getElementById(prefix + '_scene_alias').value = d.scene_alias || '';
       } else if (d.type === '3') {
@@ -384,6 +405,7 @@ String WebAdminServer::getAdminPage() {
       const oldType = document.getElementById(prefix + '_tile_type');
       const oldEntity = document.getElementById(prefix + '_sensor_entity');
       const oldUnit = document.getElementById(prefix + '_sensor_unit');
+      const oldDecimals = document.getElementById(prefix + '_sensor_decimals');
       const oldScene = document.getElementById(prefix + '_scene_alias');
       const oldKey = document.getElementById(prefix + '_key_macro');
 
@@ -392,6 +414,7 @@ String WebAdminServer::getAdminPage() {
       if (oldType) oldType.replaceWith(oldType.cloneNode(true));
       if (oldEntity) oldEntity.replaceWith(oldEntity.cloneNode(true));
       if (oldUnit) oldUnit.replaceWith(oldUnit.cloneNode(true));
+      if (oldDecimals) oldDecimals.replaceWith(oldDecimals.cloneNode(true));
       if (oldScene) oldScene.replaceWith(oldScene.cloneNode(true));
       if (oldKey) oldKey.replaceWith(oldKey.cloneNode(true));
 
@@ -401,6 +424,7 @@ String WebAdminServer::getAdminPage() {
       const typeSelect = document.getElementById(prefix + '_tile_type');
       const entitySelect = document.getElementById(prefix + '_sensor_entity');
       const unitInput = document.getElementById(prefix + '_sensor_unit');
+      const decimalsInput = document.getElementById(prefix + '_sensor_decimals');
       const sceneInput = document.getElementById(prefix + '_scene_alias');
       const keyInput = document.getElementById(prefix + '_key_macro');
 
@@ -424,6 +448,9 @@ String WebAdminServer::getAdminPage() {
       if (unitInput) {
         unitInput.addEventListener('input', () => { updateSensorValuePreview(tab); updateDraft(tab); scheduleAutoSave(tab); });
       }
+      if (decimalsInput) {
+        decimalsInput.addEventListener('input', () => { updateSensorValuePreview(tab); updateDraft(tab); scheduleAutoSave(tab); });
+      }
       if (sceneInput) {
         sceneInput.addEventListener('input', () => {
           maybeFillTitleFromScene(tab);
@@ -437,6 +464,19 @@ String WebAdminServer::getAdminPage() {
       }
     }
 
+    function formatSensorValue(value, decimals) {
+      if (value === undefined || value === null) return '--';
+      let text = String(value).trim();
+      if (!text.length) return '--';
+      const lower = text.toLowerCase();
+      if (lower === 'unavailable' || lower === 'unknown' || lower === 'none') return '--';
+      if (decimals === undefined || decimals === null || decimals === '' || Number(decimals) === -1) return text;
+      const num = parseFloat(text.replace(',', '.'));
+      if (isNaN(num) || !isFinite(num)) return text;
+      const d = Math.max(0, Math.min(6, parseInt(decimals, 10) || 0));
+      return num.toFixed(d);
+    }
+
     // Update sensor value in preview when entity is selected
     function updateSensorValuePreview(tab) {
       if (currentTileIndex === -1) return;
@@ -444,6 +484,7 @@ String WebAdminServer::getAdminPage() {
       const prefix = tab === 'home' ? 'home' : 'game';
       const entitySelect = document.getElementById(prefix + '_sensor_entity');
       const unitInput = document.getElementById(prefix + '_sensor_unit');
+      const decimalsInput = document.getElementById(prefix + '_sensor_decimals');
 
       if (!entitySelect) return;
 
@@ -464,8 +505,8 @@ String WebAdminServer::getAdminPage() {
         .then(values => {
           const valueElem = document.getElementById(tab + '-tile-' + currentTileIndex + '-value');
           if (valueElem) {
-            let value = values[entity] || '--';
-            if (value.toLowerCase() === 'unavailable') value = '--';
+            const decimals = decimalsInput ? decimalsInput.value : '';
+            let value = formatSensorValue(values[entity] ?? '--', decimals);
             const unit = unitInput ? unitInput.value : '';
             valueElem.innerHTML = value + (unit ? '<span class="tile-unit">' + unit + '</span>' : '');
             console.log('Preview Update:', entity, '=', value, unit);
@@ -572,12 +613,18 @@ String WebAdminServer::getAdminPage() {
           if (data.type === 1) { // Sensor
             document.getElementById(prefix + '_sensor_entity').value = data.sensor_entity || '';
             document.getElementById(prefix + '_sensor_unit').value = data.sensor_unit || '';
-      } else if (data.type === 2) { // Scene
-        document.getElementById(prefix + '_scene_alias').value = data.scene_alias || '';
-        maybeFillTitleFromScene(tab);
-      } else if (data.type === 3) { // Key
-        document.getElementById(prefix + '_key_macro').value = data.key_macro || '';
-      }
+            if (document.getElementById(prefix + '_sensor_decimals')) {
+              document.getElementById(prefix + '_sensor_decimals').value = (data.sensor_decimals !== undefined && data.sensor_decimals >= 0) ? data.sensor_decimals : '';
+            }
+          } else if (data.type === 2) { // Scene
+            document.getElementById(prefix + '_scene_alias').value = data.scene_alias || '';
+            maybeFillTitleFromScene(tab);
+          } else if (data.type === 3) { // Key
+            document.getElementById(prefix + '_key_macro').value = data.key_macro || '';
+          }
+          if (data.type !== 1 && document.getElementById(prefix + '_sensor_decimals')) {
+            document.getElementById(prefix + '_sensor_decimals').value = '';
+          }
 
           // Ensure selection stays highlighted after async load
           const tileElem = document.getElementById(tab + '-tile-' + index);
@@ -641,6 +688,7 @@ String WebAdminServer::getAdminPage() {
       document.getElementById(prefix + '_tile_color').value = '#2A2A2A';
       if (document.getElementById(prefix + '_sensor_entity')) document.getElementById(prefix + '_sensor_entity').value = '';
       if (document.getElementById(prefix + '_sensor_unit')) document.getElementById(prefix + '_sensor_unit').value = '';
+      if (document.getElementById(prefix + '_sensor_decimals')) document.getElementById(prefix + '_sensor_decimals').value = '';
       if (document.getElementById(prefix + '_scene_alias')) document.getElementById(prefix + '_scene_alias').value = '';
       if (document.getElementById(prefix + '_key_macro')) document.getElementById(prefix + '_key_macro').value = '';
       updateTileType(tab);
@@ -666,6 +714,7 @@ String WebAdminServer::getAdminPage() {
       if (typeValue === '1') {
         formData.append('sensor_entity', document.getElementById(prefix + '_sensor_entity').value);
         formData.append('sensor_unit', document.getElementById(prefix + '_sensor_unit').value);
+        formData.append('sensor_decimals', document.getElementById(prefix + '_sensor_decimals').value);
       } else if (typeValue === '2') {
         formData.append('scene_alias', document.getElementById(prefix + '_scene_alias').value);
       } else if (typeValue === '3') {
@@ -735,8 +784,7 @@ String WebAdminServer::getAdminPage() {
         if (tile.type === 1) {
           let value = '--';
           if (tile.sensor_entity) {
-            value = sensorValues[tile.sensor_entity] || '--';
-            if (typeof value === 'string' && value.toLowerCase() === 'unavailable') value = '--';
+            value = formatSensorValue(sensorValues[tile.sensor_entity] ?? '--', tile.sensor_decimals);
           }
           const unit = tile.sensor_unit || '';
           html += '<div class="tile-value" id="' + tab + '-tile-' + index + '-value">' + value + (unit ? '<span class="tile-unit">' + unit + '</span>' : '') + '</div>';
@@ -1302,9 +1350,11 @@ String WebAdminServer::getAdminPage() {
       String sensorValue = "--";
       if (tile.sensor_entity.length()) {
         sensorValue = haBridgeConfig.findSensorInitialValue(tile.sensor_entity);
-        Serial.printf("[WebAdmin] Home Tile %d: Entity=%s, Value=%s\n",
+        sensorValue = formatSensorValue(sensorValue, tile.sensor_decimals);
+        Serial.printf("[WebAdmin] Home Tile %d: Entity=%s, Value=%s (dec=%u)\n",
                       i, tile.sensor_entity.c_str(),
-                      sensorValue.length() ? sensorValue.c_str() : "(empty)");
+                      sensorValue.length() ? sensorValue.c_str() : "(empty)",
+                      static_cast<unsigned>(tile.sensor_decimals));
         if (sensorValue.length() == 0) {
           sensorValue = "--";
         }
@@ -1364,6 +1414,8 @@ String WebAdminServer::getAdminPage() {
               </select>
               <label>Einheit</label>
               <input type="text" id="home_sensor_unit" placeholder="z.B. Ã‚Â°C">
+              <label>Nachkommastellen (leer = Originalwert)</label>
+              <input type="number" id="home_sensor_decimals" min="0" max="6" step="1" placeholder="z.B. 1">
             </div>
 
             <!-- Scene Fields -->
@@ -1492,9 +1544,11 @@ String WebAdminServer::getAdminPage() {
       String sensorValue = "--";
       if (tile.sensor_entity.length()) {
         sensorValue = haBridgeConfig.findSensorInitialValue(tile.sensor_entity);
-        Serial.printf("[WebAdmin] Game Tile %d: Entity=%s, Value=%s\n",
+        sensorValue = formatSensorValue(sensorValue, tile.sensor_decimals);
+        Serial.printf("[WebAdmin] Game Tile %d: Entity=%s, Value=%s (dec=%u)\n",
                       i, tile.sensor_entity.c_str(),
-                      sensorValue.length() ? sensorValue.c_str() : "(empty)");
+                      sensorValue.length() ? sensorValue.c_str() : "(empty)",
+                      static_cast<unsigned>(tile.sensor_decimals));
         if (sensorValue.length() == 0) {
           sensorValue = "--";
         }
@@ -1554,6 +1608,8 @@ String WebAdminServer::getAdminPage() {
               </select>
               <label>Einheit</label>
               <input type="text" id="game_sensor_unit" placeholder="z.B. Ã‚Â°C">
+              <label>Nachkommastellen (leer = Originalwert)</label>
+              <input type="number" id="game_sensor_decimals" min="0" max="6" step="1" placeholder="z.B. 1">
             </div>
 
             <!-- Scene Fields -->

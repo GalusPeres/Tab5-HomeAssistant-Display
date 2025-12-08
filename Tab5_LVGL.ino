@@ -149,6 +149,7 @@ void loop() {
       was_asleep = true;
     }
     if (configManager.isConfigured()) networkManager.update();
+    process_sensor_update_queue();  // Sensor-Warteschlange auch im Sleep leeren
     lgfx::touch_point_t tp;
     if (M5.Display.getTouch(&tp)) {
       powerManager.wakeFromDisplaySleep();

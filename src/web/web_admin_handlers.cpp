@@ -316,7 +316,9 @@ void WebAdminServer::handleGetTiles() {
     json += tile.sensor_entity;
     json += "\",\"sensor_unit\":\"";
     json += tile.sensor_unit;
-    json += "\",\"scene_alias\":\"";
+    json += "\",\"sensor_decimals\":";
+    json += String(tile.sensor_decimals == 0xFF ? -1 : (int)tile.sensor_decimals);
+    json += ",\"scene_alias\":\"";
     json += tile.scene_alias;
     json += "\",\"key_macro\":\"";
     json += tile.key_macro;
@@ -343,7 +345,9 @@ void WebAdminServer::handleGetTiles() {
     json += tile.sensor_entity;
     json += "\",\"sensor_unit\":\"";
     json += tile.sensor_unit;
-    json += "\",\"scene_alias\":\"";
+    json += "\",\"sensor_decimals\":";
+    json += String(tile.sensor_decimals == 0xFF ? -1 : (int)tile.sensor_decimals);
+    json += ",\"scene_alias\":\"";
     json += tile.scene_alias;
     json += "\",\"key_macro\":\"";
     json += tile.key_macro;
@@ -389,10 +393,25 @@ void WebAdminServer::handleSaveTiles() {
   if (type == TILE_SENSOR) {
     tile.sensor_entity = server.hasArg("sensor_entity") ? server.arg("sensor_entity") : "";
     tile.sensor_unit = server.hasArg("sensor_unit") ? server.arg("sensor_unit") : "";
+
+    uint8_t decimals = 0xFF;
+    if (server.hasArg("sensor_decimals")) {
+      String decStr = server.arg("sensor_decimals");
+      decStr.trim();
+      if (decStr.length() > 0) {
+        int dec = decStr.toInt();
+        if (dec < 0) dec = 0;
+        if (dec > 6) dec = 6;
+        decimals = static_cast<uint8_t>(dec);
+      }
+    }
+    tile.sensor_decimals = decimals;
   } else if (type == TILE_SCENE) {
     tile.scene_alias = server.hasArg("scene_alias") ? server.arg("scene_alias") : "";
+    tile.sensor_decimals = 0xFF;
   } else if (type == TILE_KEY) {
     tile.key_macro = server.hasArg("key_macro") ? server.arg("key_macro") : "";
+    tile.sensor_decimals = 0xFF;
 
     // Parse macro to key_code and modifier
     String macro = tile.key_macro;
@@ -420,6 +439,8 @@ void WebAdminServer::handleSaveTiles() {
 
     tile.key_code = key_code;
     tile.key_modifier = modifier;
+  } else {
+    tile.sensor_decimals = 0xFF;
   }
 
   // Save to NVS

@@ -20,6 +20,7 @@ struct Tile {
   // Sensor-spezifisch
   String sensor_entity;      // HA Entity ID (z.B. "sensor.temperature")
   String sensor_unit;        // Einheit (z.B. "°C")
+  uint8_t sensor_decimals;   // Nachkommastellen (0xFF = unverändert)
 
   // Scene-spezifisch
   String scene_alias;        // HA Scene Alias
@@ -29,7 +30,12 @@ struct Tile {
   uint8_t key_code;          // USB HID Scancode
   uint8_t key_modifier;      // Modifier bits (CTRL=0x01, SHIFT=0x02, ALT=0x04)
 
-  Tile() : type(TILE_EMPTY), bg_color(0), key_code(0), key_modifier(0) {}
+  Tile()
+      : type(TILE_EMPTY),
+        bg_color(0),
+        sensor_decimals(0xFF),  // 0xFF = keine Rundung, Originalwert anzeigen
+        key_code(0),
+        key_modifier(0) {}
 };
 
 struct TileGridConfig {

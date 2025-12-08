@@ -1,7 +1,10 @@
 #include "src/tiles/tile_renderer.h"
 #include "src/network/ha_bridge_config.h"
 #include "src/game/game_ws_server.h"
+#include "src/tiles/tile_config.h"
 #include <Arduino.h>
+#include <math.h>
+#include <stdlib.h>
 
 /* === Layout-Konstanten === */
 static const int CARD_H = 150;
@@ -55,10 +58,32 @@ struct SensorUpdate {
   bool valid;
 };
 
-static const uint8_t QUEUE_SIZE = 20;
+static const uint8_t QUEUE_SIZE = 32;
 static SensorUpdate g_update_queue[QUEUE_SIZE];
 static volatile uint8_t g_queue_head = 0;
 static volatile uint8_t g_queue_tail = 0;
+static uint32_t g_queue_overflow_count = 0;
+
+static uint8_t get_sensor_decimals(GridType grid_type, uint8_t grid_index) {
+  if (grid_index >= TILES_PER_GRID) return 0xFF;
+  const TileGridConfig& grid = (grid_type == GridType::GAME)
+                                 ? tileConfig.getGameGrid()
+                                 : tileConfig.getHomeGrid();
+  return grid.tiles[grid_index].sensor_decimals;
+}
+
+static bool apply_decimals(String& value, uint8_t decimals) {
+  if (decimals == 0xFF) return false;  // Keine Rundung gewuenscht
+  String normalized = value;
+  normalized.replace(",", ".");
+  char* end = nullptr;
+  float f = strtof(normalized.c_str(), &end);
+  if (!end || end == normalized.c_str()) return false;  // Keine Zahl
+  if (isnan(f) || isinf(f)) return false;
+  uint8_t d = decimals > 6 ? 6 : decimals;
+  value = String(f, static_cast<unsigned int>(d));
+  return true;
+}
 
 // MQTT Callback ruft das auf (thread-safe!)
 void queue_sensor_tile_update(GridType grid_type, uint8_t grid_index, const char* value, const char* unit) {
@@ -66,11 +91,28 @@ void queue_sensor_tile_update(GridType grid_type, uint8_t grid_index, const char
     return;
   }
 
+  // Bestehendes, noch nicht verarbeitetes Update fuer dieselbe Tile ersetzen
+  uint8_t idx = g_queue_tail;
+  while (idx != g_queue_head) {
+    SensorUpdate& pending = g_update_queue[idx];
+    if (pending.valid &&
+        pending.grid_type == grid_type &&
+        pending.grid_index == grid_index) {
+      pending.value = String(value);
+      pending.unit = unit ? String(unit) : "";
+      return;
+    }
+    idx = (idx + 1) % QUEUE_SIZE;
+  }
+
   uint8_t next_head = (g_queue_head + 1) % QUEUE_SIZE;
 
   if (next_head == g_queue_tail) {
-    Serial.println("[Queue] VOLL! Update verworfen!");
-    return;
+    // Queue voll - aeltestes Element verwerfen und ueberschreiben
+    if ((g_queue_overflow_count++ % 10) == 0) {
+      Serial.println("[Queue] VOLL! Aeltestes Sensor-Update wird ueberschrieben");
+    }
+    g_queue_tail = (g_queue_tail + 1) % QUEUE_SIZE;
   }
 
   g_update_queue[g_queue_head].grid_type = grid_type;
@@ -358,6 +400,20 @@ void update_sensor_tile_value(GridType grid_type, uint8_t grid_index, const char
 
   String displayValue = value ? String(value) : String();
   displayValue.trim();
+
+  String lower = displayValue;
+  lower.toLowerCase();
+  if (lower == "unavailable" || lower == "unknown" || lower == "none" || lower == "null") {
+    displayValue = "--";
+  }
+
+  // Formatierung nach Wunsch der Kachel (Nachkommastellen)
+  if (displayValue.length() > 0 &&
+      displayValue != "--" &&
+      !displayValue.equalsIgnoreCase("unavailable")) {
+    uint8_t decimals = get_sensor_decimals(grid_type, grid_index);
+    apply_decimals(displayValue, decimals);
+  }
 
   // Zeige "--" wenn leer oder unavailable
   if (displayValue.length() == 0 || displayValue.equalsIgnoreCase("unavailable")) {

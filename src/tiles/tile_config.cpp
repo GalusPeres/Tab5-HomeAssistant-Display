@@ -55,6 +55,9 @@ bool TileConfig::loadGrid(const char* prefix, TileGridConfig& grid) {
     snprintf(key, sizeof(key), "%s_t%u_unit", prefix, static_cast<unsigned>(i));
     grid.tiles[i].sensor_unit = prefs.getString(key, "");
 
+    snprintf(key, sizeof(key), "%s_t%u_prec", prefix, static_cast<unsigned>(i));
+    grid.tiles[i].sensor_decimals = prefs.getUChar(key, 0xFF);
+
     // Scene-spezifisch
     snprintf(key, sizeof(key), "%s_t%u_scene", prefix, static_cast<unsigned>(i));
     grid.tiles[i].scene_alias = prefs.getString(key, "");
@@ -103,6 +106,9 @@ bool TileConfig::saveGrid(const char* prefix, const TileGridConfig& grid) {
 
     snprintf(key, sizeof(key), "%s_t%u_unit", prefix, static_cast<unsigned>(i));
     prefs.putString(key, tile.sensor_unit);
+
+    snprintf(key, sizeof(key), "%s_t%u_prec", prefix, static_cast<unsigned>(i));
+    prefs.putUChar(key, tile.sensor_decimals);
 
     // Scene-spezifisch
     snprintf(key, sizeof(key), "%s_t%u_scene", prefix, static_cast<unsigned>(i));
