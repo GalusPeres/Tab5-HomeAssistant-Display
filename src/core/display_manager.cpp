@@ -13,6 +13,7 @@ lv_indev_t* DisplayManager::indev = nullptr;
 lv_color_t* DisplayManager::buf1 = nullptr;
 lv_color_t* DisplayManager::buf2 = nullptr;
 uint32_t DisplayManager::last_activity_time = 0;
+static bool g_ignore_touch_until_release = false;
 
 // ========== Display Flush Callback ==========
 // IRAM_ATTR: Diese Funktion wird SEHR oft aufgerufen (jeder Frame!)
@@ -32,8 +33,19 @@ void IRAM_ATTR DisplayManager::touch_cb(lv_indev_t* indev_drv, lv_indev_data_t *
   // Wenn im Display-Sleep, erstmal aufwecken
   if (powerManager.isInSleep()) {
     powerManager.wakeFromDisplaySleep();
+    g_ignore_touch_until_release = true;  // Erst loslassen, dann wieder reagieren
     data->state = LV_INDEV_STATE_RELEASED;
     return;
+  }
+
+  // Nach Sleep: Erst Touch loslassen, bevor Aktionen erlaubt sind
+  if (g_ignore_touch_until_release) {
+    lgfx::touch_point_t tmp;
+    if (M5.Display.getTouch(&tmp)) {
+      data->state = LV_INDEV_STATE_RELEASED;
+      return;
+    }
+    g_ignore_touch_until_release = false;
   }
 
   lgfx::touch_point_t tp;
@@ -55,7 +67,8 @@ bool DisplayManager::init() {
   Serial.println("[Display] Initialisiere Display Manager...");
 
   // M5Stack Display-Setup
-  M5.Display.setRotation(1);  // 1280x720 Querformat
+  // 180° Rotation (Landscape inverted)
+  M5.Display.setRotation(1);
   M5.Display.fillScreen(TFT_BLACK);
   M5.Display.setBrightness(150);  // Wird spaeter vom Power Manager gesteuert
 
