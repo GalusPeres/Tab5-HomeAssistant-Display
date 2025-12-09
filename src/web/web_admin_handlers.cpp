@@ -453,13 +453,13 @@ void WebAdminServer::handleSaveTiles() {
     mqttReloadDynamicSlots();
     Serial.println("[WebAdmin] MQTT Routes neu aufgebaut");
 
-    // Reload display layouts
+    // Update only the changed tile on display to avoid flicker
     if (tab == "home") {
-      tiles_home_reload_layout();
-      Serial.println("[WebAdmin] Home Layout neu geladen");
+      tiles_home_update_tile(static_cast<uint8_t>(index));
+      Serial.println("[WebAdmin] Home Tile aktualisiert");
     } else {
-      tiles_game_reload_layout();
-      Serial.println("[WebAdmin] Game Layout neu geladen");
+      tiles_game_update_tile(static_cast<uint8_t>(index));
+      Serial.println("[WebAdmin] Game Tile aktualisiert");
     }
 
     server.send(200, "application/json", "{\"success\":true}");
@@ -492,9 +492,11 @@ void WebAdminServer::handleReorderTiles() {
   if (success) {
     mqttReloadDynamicSlots();
     if (tab == "home") {
-      tiles_home_reload_layout();
+      tiles_home_update_tile(static_cast<uint8_t>(from));
+      tiles_home_update_tile(static_cast<uint8_t>(to));
     } else {
-      tiles_game_reload_layout();
+      tiles_game_update_tile(static_cast<uint8_t>(from));
+      tiles_game_update_tile(static_cast<uint8_t>(to));
     }
     server.send(200, "application/json", "{\"success\":true}");
   } else {

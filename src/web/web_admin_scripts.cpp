@@ -38,6 +38,17 @@ void appendAdminScripts(String& html) {
     }
   }
 
+  function swapDrafts(tab, fromIdx, toIdx) {
+    if (!drafts[tab]) return;
+    const fromVal = drafts[tab][fromIdx];
+    const toVal = drafts[tab][toIdx];
+    if (fromVal === undefined && toVal === undefined) return;
+    drafts[tab][toIdx] = fromVal;
+    if (toVal === undefined) delete drafts[tab][fromIdx];
+    else drafts[tab][fromIdx] = toVal;
+    persistDrafts();
+  }
+
   function updateDraft(tab) {
     if (currentTileIndex === -1) return;
     const prefix = tab === 'home' ? 'home' : 'game';
@@ -384,17 +395,15 @@ void appendAdminScripts(String& html) {
       gameTilesData = gameTiles;
       homeTiles.forEach((tile, idx) => renderTileFromData('home', idx, tile, sensorValues));
       gameTiles.forEach((tile, idx) => renderTileFromData('game', idx, tile, sensorValues));
+      if (currentTileIndex !== -1) {
+        const tab = currentTileTab === 'game' ? 'game' : 'home';
+        const settingsId = tab === 'home' ? 'homeSettings' : 'gameSettings';
+        document.getElementById(settingsId)?.classList.remove('hidden');
+        const activeTile = document.getElementById(tab + '-tile-' + currentTileIndex);
+        if (activeTile) activeTile.classList.add('active');
+      }
     })
     .catch(err => console.error('Fehler beim Laden der Sensorwerte:', err));
-
-    if (currentTileIndex !== -1) {
-      const tab = currentTileTab === 'game' ? 'game' : 'home';
-      const settingsId = tab === 'home' ? 'homeSettings' : 'gameSettings';
-      document.getElementById(settingsId)?.classList.remove('hidden');
-      document.querySelectorAll('.tile').forEach(t => t.classList.remove('active'));
-      const activeTile = document.getElementById(tab + '-tile-' + currentTileIndex);
-      if (activeTile) activeTile.classList.add('active');
-    }
   }
 
   let dragSource = null;
@@ -462,6 +471,11 @@ void appendAdminScripts(String& html) {
     .then(res => res.json())
     .then(data => {
       if (data.success) {
+        if (tab === currentTileTab) {
+          if (currentTileIndex === fromIdx) currentTileIndex = toIdx;
+          else if (currentTileIndex === toIdx) currentTileIndex = fromIdx;
+        }
+        swapDrafts(tab, fromIdx, toIdx);
         showNotification('Kacheln verschoben & gespeichert!');
         loadSensorValues();
       } else {

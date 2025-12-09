@@ -49,6 +49,16 @@ static void clear_sensor_widgets(GridType grid_type) {
   }
 }
 
+void reset_sensor_widget(GridType grid_type, uint8_t grid_index) {
+  if (grid_index >= TILES_PER_GRID) return;
+  SensorTileWidgets* target = (grid_type == GridType::GAME) ? g_game_sensors : g_home_sensors;
+  target[grid_index] = {};
+}
+
+void reset_sensor_widgets(GridType grid_type) {
+  clear_sensor_widgets(grid_type);
+}
+
 /* === Thread-Safe Update Queue (MQTT → Main Loop) === */
 struct SensorUpdate {
   GridType grid_type;
@@ -190,32 +200,30 @@ void render_tile_grid(lv_obj_t* parent, const TileGridConfig& config, GridType g
   Serial.printf("[TileRenderer] Min Free Heap seit Boot: %u KB\n", ESP.getMinFreeHeap() / 1024);
 }
 
-void render_tile(lv_obj_t* parent, int col, int row, const Tile& tile, uint8_t index, GridType grid_type, scene_publish_cb_t scene_cb) {
+lv_obj_t* render_tile(lv_obj_t* parent, int col, int row, const Tile& tile, uint8_t index, GridType grid_type, scene_publish_cb_t scene_cb) {
   switch (tile.type) {
     case TILE_SENSOR:
-      render_sensor_tile(parent, col, row, tile, index, grid_type);
-      break;
+      return render_sensor_tile(parent, col, row, tile, index, grid_type);
     case TILE_SCENE:
-      render_scene_tile(parent, col, row, tile, index, scene_cb);
-      break;
+      return render_scene_tile(parent, col, row, tile, index, scene_cb);
     case TILE_KEY:
-      render_key_tile(parent, col, row, tile, index, grid_type);
-      break;
+      return render_key_tile(parent, col, row, tile, index, grid_type);
     default:
-      render_empty_tile(parent, col, row);
+      return render_empty_tile(parent, col, row);
   }
+  return nullptr;
 }
 
-void render_sensor_tile(lv_obj_t* parent, int col, int row, const Tile& tile, uint8_t index, GridType grid_type) {
+lv_obj_t* render_sensor_tile(lv_obj_t* parent, int col, int row, const Tile& tile, uint8_t index, GridType grid_type) {
   if (!parent) {
     Serial.println("[TileRenderer] ERROR: parent NULL bei Sensor-Tile");
-    return;
+    return nullptr;
   }
 
   lv_obj_t* card = lv_obj_create(parent);
   if (!card) {
     Serial.println("[TileRenderer] ERROR: Konnte Sensor-Card nicht erstellen");
-    return;
+    return nullptr;
   }
 
   // Farbe verwenden (Standard: 0x2A2A2A wenn color = 0)
@@ -238,7 +246,7 @@ void render_sensor_tile(lv_obj_t* parent, int col, int row, const Tile& tile, ui
   lv_obj_t* t = lv_label_create(card);
   if (!t) {
     Serial.println("[TileRenderer] ERROR: Konnte Title-Label nicht erstellen");
-    return;
+    return card;
   }
   set_label_style(t, lv_color_hex(0xFFFFFF), FONT_TITLE);
   lv_label_set_text(t, tile.title.length() ? tile.title.c_str() : "Sensor");
@@ -248,7 +256,7 @@ void render_sensor_tile(lv_obj_t* parent, int col, int row, const Tile& tile, ui
   lv_obj_t* v = lv_label_create(card);
   if (!v) {
     Serial.println("[TileRenderer] ERROR: Konnte Value-Label nicht erstellen");
-    return;
+    return card;
   }
   set_label_style(v, lv_color_white(), FONT_VALUE);
   lv_label_set_text(v, "--");
@@ -258,6 +266,8 @@ void render_sensor_tile(lv_obj_t* parent, int col, int row, const Tile& tile, ui
   SensorTileWidgets* target = (grid_type == GridType::HOME) ? g_home_sensors : g_game_sensors;
   target[index].value_label = v;
   target[index].unit_label = nullptr;
+
+  return card;
 }
 
 struct SceneEventData {
@@ -265,7 +275,7 @@ struct SceneEventData {
   scene_publish_cb_t callback;
 };
 
-void render_scene_tile(lv_obj_t* parent, int col, int row, const Tile& tile, uint8_t index, scene_publish_cb_t scene_cb) {
+lv_obj_t* render_scene_tile(lv_obj_t* parent, int col, int row, const Tile& tile, uint8_t index, scene_publish_cb_t scene_cb) {
   lv_obj_t* btn = lv_button_create(parent);
   lv_obj_set_style_radius(btn, 22, 0);
   lv_obj_set_style_border_width(btn, 0, 0);
@@ -309,6 +319,8 @@ void render_scene_tile(lv_obj_t* parent, int col, int row, const Tile& tile, uin
         LV_EVENT_CLICKED,
         event_data);
   }
+
+  return btn;
 }
 
 struct KeyEventData {
@@ -318,7 +330,7 @@ struct KeyEventData {
   uint8_t index;
 };
 
-void render_key_tile(lv_obj_t* parent, int col, int row, const Tile& tile, uint8_t index, GridType grid_type) {
+lv_obj_t* render_key_tile(lv_obj_t* parent, int col, int row, const Tile& tile, uint8_t index, GridType grid_type) {
   lv_obj_t* btn = lv_button_create(parent);
   lv_obj_set_style_radius(btn, 22, 0);
   lv_obj_set_style_border_width(btn, 0, 0);
@@ -375,9 +387,11 @@ void render_key_tile(lv_obj_t* parent, int col, int row, const Tile& tile, uint8
         LV_EVENT_CLICKED,
         event_data);
   }
+
+  return btn;
 }
 
-void render_empty_tile(lv_obj_t* parent, int col, int row) {
+lv_obj_t* render_empty_tile(lv_obj_t* parent, int col, int row) {
   lv_obj_t* placeholder = lv_obj_create(parent);
   lv_obj_set_style_bg_opa(placeholder, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(placeholder, 0, 0);
@@ -385,6 +399,7 @@ void render_empty_tile(lv_obj_t* parent, int col, int row) {
   lv_obj_set_grid_cell(placeholder,
       LV_GRID_ALIGN_STRETCH, col, 1,
       LV_GRID_ALIGN_STRETCH, row, 1);
+  return placeholder;
 }
 
 void update_sensor_tile_value(GridType grid_type, uint8_t grid_index, const char* value, const char* unit) {

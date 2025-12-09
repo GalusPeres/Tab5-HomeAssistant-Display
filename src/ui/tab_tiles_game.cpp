@@ -11,6 +11,33 @@ static const int GRID_PAD = 24;
 /* === Globale State === */
 static lv_obj_t* g_tiles_game_grid = nullptr;
 static scene_publish_cb_t g_tiles_game_scene_cb = nullptr;
+static lv_obj_t* g_tiles_game_objs[TILES_PER_GRID] = {nullptr};
+
+static lv_obj_t* create_tiles_grid(lv_obj_t* parent) {
+  if (!parent) return nullptr;
+  lv_obj_t* grid = lv_obj_create(parent);
+  lv_obj_set_style_bg_color(grid, lv_color_hex(0x000000), 0);
+  lv_obj_set_style_bg_opa(grid, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(grid, 0, 0);
+  lv_obj_set_style_pad_all(grid, GRID_PAD, 0);
+  lv_obj_remove_flag(grid, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_size(grid, LV_PCT(100), LV_PCT(100));
+  lv_obj_set_style_pad_column(grid, GAP, 0);
+  lv_obj_set_style_pad_row(grid, GAP, 0);
+
+  static lv_coord_t col_dsc[] = {
+    LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST
+  };
+  static lv_coord_t row_dsc[] = {
+    LV_GRID_CONTENT,
+    LV_GRID_CONTENT,
+    LV_GRID_CONTENT,
+    LV_GRID_CONTENT,
+    LV_GRID_TEMPLATE_LAST
+  };
+  lv_obj_set_grid_dsc_array(grid, col_dsc, row_dsc);
+  return grid;
+}
 
 /* === Aufbau Tiles-Game-Tab === */
 void build_tiles_game_tab(lv_obj_t *parent, scene_publish_cb_t scene_cb) {
@@ -25,41 +52,43 @@ void build_tiles_game_tab(lv_obj_t *parent, scene_publish_cb_t scene_cb) {
   lv_obj_set_style_anim_duration(parent, 0, 0);
   lv_obj_set_style_pad_all(parent, OUTER, 0);
 
-  g_tiles_game_grid = lv_obj_create(parent);
-  lv_obj_set_style_bg_color(g_tiles_game_grid, lv_color_hex(0x000000), 0);
-  lv_obj_set_style_bg_opa(g_tiles_game_grid, LV_OPA_COVER, 0);
-  lv_obj_set_style_border_width(g_tiles_game_grid, 0, 0);
-  lv_obj_set_style_pad_all(g_tiles_game_grid, GRID_PAD, 0);
-  lv_obj_remove_flag(g_tiles_game_grid, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_set_size(g_tiles_game_grid, LV_PCT(100), LV_PCT(100));
-  lv_obj_set_style_pad_column(g_tiles_game_grid, GAP, 0);
-  lv_obj_set_style_pad_row(g_tiles_game_grid, GAP, 0);
-
-  static lv_coord_t col_dsc[] = {
-    LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST
-  };
-  static lv_coord_t row_dsc[] = {
-    LV_GRID_CONTENT,
-    LV_GRID_CONTENT,
-    LV_GRID_CONTENT,
-    LV_GRID_CONTENT,
-    LV_GRID_TEMPLATE_LAST
-  };
-  lv_obj_set_grid_dsc_array(g_tiles_game_grid, col_dsc, row_dsc);
-
+  g_tiles_game_grid = create_tiles_grid(parent);
   tiles_game_reload_layout();
 }
 
 void tiles_game_reload_layout() {
   if (!g_tiles_game_grid) return;
 
+  reset_sensor_widgets(GridType::GAME);
+  for (size_t i = 0; i < TILES_PER_GRID; ++i) {
+    g_tiles_game_objs[i] = nullptr;
+  }
   lv_obj_clean(g_tiles_game_grid);
 
   // Render tile grid using new unified system
   const TileGridConfig& config = tileConfig.getGameGrid();
-  render_tile_grid(g_tiles_game_grid, config, GridType::GAME, g_tiles_game_scene_cb);
+  for (uint8_t i = 0; i < TILES_PER_GRID; ++i) {
+    int row = i / 3;
+    int col = i % 3;
+    g_tiles_game_objs[i] = render_tile(g_tiles_game_grid, col, row, config.tiles[i], i, GridType::GAME, g_tiles_game_scene_cb);
+  }
 
   Serial.println("[TilesGame] Layout neu geladen");
+}
+
+void tiles_game_update_tile(uint8_t index) {
+  if (!g_tiles_game_grid) return;
+  if (index >= TILES_PER_GRID) return;
+  const TileGridConfig& config = tileConfig.getGameGrid();
+  reset_sensor_widget(GridType::GAME, index);
+  int row = index / 3;
+  int col = index % 3;
+  lv_obj_t* old_tile = g_tiles_game_objs[index];
+  lv_obj_t* new_tile = render_tile(g_tiles_game_grid, col, row, config.tiles[index], index, GridType::GAME, g_tiles_game_scene_cb);
+  g_tiles_game_objs[index] = new_tile;
+  if (old_tile) {
+    lv_obj_del_async(old_tile);
+  }
 }
 
 void tiles_game_update_sensor_by_entity(const char* entity_id, const char* value) {
