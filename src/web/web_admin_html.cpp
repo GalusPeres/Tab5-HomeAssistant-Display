@@ -101,6 +101,7 @@ String WebAdminServer::getAdminPage() {
     .slot select, .slot input { width:100%; box-sizing:border-box; }
     .slot select { padding:10px; border:1px solid #cbd5f5; border-radius:10px; font-size:15px; background:#fff; margin-bottom:8px; }
     .slot input { padding:9px; border:1px solid #d6defa; border-radius:10px; font-size:13px; margin-bottom:6px; }
+    .legacy-block { border:1px dashed #cbd5f5; background:#f8fafc; border-radius:12px; padding:12px; margin-bottom:16px; }
 
     /* Tile Editor - M5Stack Tab5: Content 1100x720 (50% Web-Skalierung) */
     /* Original: Tile 335x150px, Gap 24px Ã¢â€ â€™ Web: Tile 168x75px, Gap 12px */
@@ -1009,7 +1010,7 @@ String WebAdminServer::getAdminPage() {
         <button class="tab-btn" onclick="switchTab('tab-network')">Network</button>
         <button class="tab-btn" onclick="switchTab('tab-tiles-home')">Tiles Home</button>
         <button class="tab-btn" onclick="switchTab('tab-tiles-game')">Tiles Game</button>
-        <button class="tab-btn" onclick="switchTab('tab-home')">Home (Alt)</button>
+        <button class="tab-btn" onclick="switchTab('tab-home')">Legacy Slots (Alt)</button>
         <button class="tab-btn" onclick="switchTab('tab-game')">Game (Alt)</button>
       </div>
 
@@ -1058,6 +1059,10 @@ String WebAdminServer::getAdminPage() {
 
       <!-- Tab 2: Home (6 Sensors + 6 Scenes) -->
       <div id="tab-home" class="tab-content">
+        <div class="legacy-block">
+          <strong>Legacy Slot-Editor</strong>
+          <p class="hint" style="margin:6px 0 0;">Nur nutzen, wenn du noch die alten 6 Sensor/6 Szenen-Slots brauchst. F&uuml;r neue Kacheln bitte den Tile-Editor verwenden.</p>
+        </div>
         <p class="hint">Ordne hier die 3x4 Kacheln zu. Die oberen zwei Reihen zeigen Sensoren, die unteren zwei Reihen Szenen. Auswahl &quot;Keine&quot; blendet eine Kachel aus.</p>
         <form action="/bridge" method="POST">
           <div class="layout-grid">
