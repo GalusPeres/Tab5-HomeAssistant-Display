@@ -153,10 +153,78 @@ static void clearAllLegacyKeys() {
   clearLegacyKeys(prefs, "tab0");
   clearLegacyKeys(prefs, "tab1");
   clearLegacyKeys(prefs, "tab2");
+  clearLegacyKeys(prefs, "home");   // Clean up old naming
+  clearLegacyKeys(prefs, "game");
+  clearLegacyKeys(prefs, "weather");
   prefs.end();
 }
 
+// Migrate old blob keys to new naming
+static bool migrateOldBlobs() {
+  Preferences prefs;
+  if (!prefs.begin(PREF_NAMESPACE, false)) {
+    return false;
+  }
+
+  // Check if new blobs already exist
+  if (prefs.isKey("tab0_blob")) {
+    prefs.end();
+    return false;  // Already migrated
+  }
+
+  bool migrated = false;
+
+  // Migrate home -> tab0
+  if (prefs.isKey("home_blob")) {
+    size_t len = prefs.getBytesLength("home_blob");
+    if (len > 0 && len < 8192) {
+      uint8_t* buf = new uint8_t[len];
+      if (buf && prefs.getBytes("home_blob", buf, len) == len) {
+        prefs.putBytes("tab0_blob", buf, len);
+        prefs.remove("home_blob");
+        Serial.println("[TileConfig] Migrated home_blob -> tab0_blob");
+        migrated = true;
+      }
+      delete[] buf;
+    }
+  }
+
+  // Migrate game -> tab1
+  if (prefs.isKey("game_blob")) {
+    size_t len = prefs.getBytesLength("game_blob");
+    if (len > 0 && len < 8192) {
+      uint8_t* buf = new uint8_t[len];
+      if (buf && prefs.getBytes("game_blob", buf, len) == len) {
+        prefs.putBytes("tab1_blob", buf, len);
+        prefs.remove("game_blob");
+        Serial.println("[TileConfig] Migrated game_blob -> tab1_blob");
+        migrated = true;
+      }
+      delete[] buf;
+    }
+  }
+
+  // Migrate weather -> tab2
+  if (prefs.isKey("weather_blob")) {
+    size_t len = prefs.getBytesLength("weather_blob");
+    if (len > 0 && len < 8192) {
+      uint8_t* buf = new uint8_t[len];
+      if (buf && prefs.getBytes("weather_blob", buf, len) == len) {
+        prefs.putBytes("tab2_blob", buf, len);
+        prefs.remove("weather_blob");
+        Serial.println("[TileConfig] Migrated weather_blob -> tab2_blob");
+        migrated = true;
+      }
+      delete[] buf;
+    }
+  }
+
+  prefs.end();
+  return migrated;
+}
+
 bool TileConfig::load() {
+  migrateOldBlobs();  // Migrate old home/game/weather to tab0/tab1/tab2
   clearAllLegacyKeys();  // Aufräumen von Altlasten (vorherige Key/Value-Layouts)
   bool tab0_ok = loadGrid("tab0", tab0_grid);
   bool tab1_ok = loadGrid("tab1", tab1_grid);
