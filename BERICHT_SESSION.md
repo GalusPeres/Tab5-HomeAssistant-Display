@@ -385,3 +385,13 @@ src/web/web_admin_scripts.cpp   (3-tab JavaScript)
 ---
 
 **Ende des Berichts**
+
+---
+
+## Update 2025-12-10 (später)
+
+- Device wieder bootbar mit altem Code; Web-Admin läuft.
+- Tiles werden jetzt grid-weise gespeichert (`saveSingleGrid`) und nur relevante Felder je Typ geschrieben, leere Tiles speichern nur den Typ; irrelevante Keys werden aus NVS entfernt.
+- Neue API `/api/status` liefert NVS-Statistiken; mit 2 voll belegten Grids: `nvs_used_entries≈243`, `nvs_free_entries≈387` (~63% frei).
+- NVS-Problem aktuell entschärft ohne Partition-Table-Änderungen.
+- Geplanter nächster Schritt: Blob-Format pro Grid (1 Key je Grid) mit Migration, um Einträge weiter zu minimieren.
