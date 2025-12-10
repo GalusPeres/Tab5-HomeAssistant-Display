@@ -291,7 +291,7 @@ void WebAdminServer::handleGetTiles() {
   }
 
   String tab = server.arg("tab");
-  if (tab != "home" && tab != "game" && tab != "weather") {
+  if (tab != "home" && tab != "game" && tab != "weather" && tab != "tab0" && tab != "tab1" && tab != "tab2") {
     server.send(400, "application/json", "{\"error\":\"Invalid tab\"}");
     return;
   }
@@ -373,7 +373,7 @@ void WebAdminServer::handleSaveTiles() {
   int index = server.arg("index").toInt();
   int type = server.arg("type").toInt();
 
-  if ((tab != "home" && tab != "game" && tab != "weather") || index < 0 || index >= TILES_PER_GRID) {
+  if ((tab != "home" && tab != "game" && tab != "weather" && tab != "tab0" && tab != "tab1" && tab != "tab2") || index < 0 || index >= TILES_PER_GRID) {
     server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid parameters\"}");
     return;
   }
@@ -479,7 +479,7 @@ void WebAdminServer::handleReorderTiles() {
   int from = server.arg("from").toInt();
   int to = server.arg("to").toInt();
 
-  if ((tab != "home" && tab != "game" && tab != "weather") || from < 0 || from >= TILES_PER_GRID || to < 0 || to >= TILES_PER_GRID) {
+  if ((tab != "home" && tab != "game" && tab != "weather" && tab != "tab0" && tab != "tab1" && tab != "tab2") || from < 0 || from >= TILES_PER_GRID || to < 0 || to >= TILES_PER_GRID) {
     server.send(400, "application/json", "{\"success\":false,\"error\":\"Invalid parameters\"}");
     return;
   }
