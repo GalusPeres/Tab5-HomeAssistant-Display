@@ -163,64 +163,35 @@ static void clearAllLegacyKeys() {
 static bool migrateOldBlobs() {
   Preferences prefs;
   if (!prefs.begin(PREF_NAMESPACE, false)) {
+    Serial.println("[TileConfig] Fehler: Konnte NVS nicht öffnen für Migration");
     return false;
   }
 
-  // Check if new blobs already exist
-  if (prefs.isKey("tab0_blob")) {
-    prefs.end();
-    return false;  // Already migrated
-  }
-
-  bool migrated = false;
-
-  // Migrate home -> tab0
+  // Always clean up old blob keys to free space
+  bool had_old_blobs = false;
   if (prefs.isKey("home_blob")) {
-    size_t len = prefs.getBytesLength("home_blob");
-    if (len > 0 && len < 8192) {
-      uint8_t* buf = new uint8_t[len];
-      if (buf && prefs.getBytes("home_blob", buf, len) == len) {
-        prefs.putBytes("tab0_blob", buf, len);
-        prefs.remove("home_blob");
-        Serial.println("[TileConfig] Migrated home_blob -> tab0_blob");
-        migrated = true;
-      }
-      delete[] buf;
-    }
+    had_old_blobs = true;
+    prefs.remove("home_blob");
+    Serial.println("[TileConfig] Removed old home_blob");
   }
-
-  // Migrate game -> tab1
   if (prefs.isKey("game_blob")) {
-    size_t len = prefs.getBytesLength("game_blob");
-    if (len > 0 && len < 8192) {
-      uint8_t* buf = new uint8_t[len];
-      if (buf && prefs.getBytes("game_blob", buf, len) == len) {
-        prefs.putBytes("tab1_blob", buf, len);
-        prefs.remove("game_blob");
-        Serial.println("[TileConfig] Migrated game_blob -> tab1_blob");
-        migrated = true;
-      }
-      delete[] buf;
-    }
+    had_old_blobs = true;
+    prefs.remove("game_blob");
+    Serial.println("[TileConfig] Removed old game_blob");
   }
-
-  // Migrate weather -> tab2
   if (prefs.isKey("weather_blob")) {
-    size_t len = prefs.getBytesLength("weather_blob");
-    if (len > 0 && len < 8192) {
-      uint8_t* buf = new uint8_t[len];
-      if (buf && prefs.getBytes("weather_blob", buf, len) == len) {
-        prefs.putBytes("tab2_blob", buf, len);
-        prefs.remove("weather_blob");
-        Serial.println("[TileConfig] Migrated weather_blob -> tab2_blob");
-        migrated = true;
-      }
-      delete[] buf;
-    }
+    had_old_blobs = true;
+    prefs.remove("weather_blob");
+    Serial.println("[TileConfig] Removed old weather_blob");
   }
 
   prefs.end();
-  return migrated;
+
+  if (had_old_blobs) {
+    Serial.println("[TileConfig] Old blobs cleaned up - NVS space freed");
+  }
+
+  return had_old_blobs;
 }
 
 bool TileConfig::load() {
@@ -318,8 +289,12 @@ bool TileConfig::saveGrid(const char* prefix, const TileGridConfig& grid) {
 
   Preferences prefs;
   if (!prefs.begin(PREF_NAMESPACE, false)) {
+    Serial.printf("[TileConfig] Fehler beim Öffnen von NVS namespace '%s'\n", PREF_NAMESPACE);
     return false;
   }
+
+  Serial.printf("[TileConfig] Versuche zu speichern: '%s' (key='%s', size=%u bytes)\n",
+                prefix, blob_key, static_cast<unsigned>(sizeof(PackedGrid)));
 
   clearLegacyKeys(prefs, prefix);  // Alte Key/Value-EintrÃ¤ge freirÃ¤umen
 
@@ -333,8 +308,8 @@ bool TileConfig::saveGrid(const char* prefix, const TileGridConfig& grid) {
   prefs.end();
 
   if (written != sizeof(packed)) {
-    Serial.printf("[TileConfig] Fehler beim Speichern von Grid '%s' (geschrieben: %u)\n",
-                  prefix, static_cast<unsigned>(written));
+    Serial.printf("[TileConfig] Fehler beim Speichern von Grid '%s' (geschrieben: %u, erwartet: %u)\n",
+                  prefix, static_cast<unsigned>(written), static_cast<unsigned>(sizeof(packed)));
     return false;
   }
 
