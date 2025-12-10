@@ -259,14 +259,6 @@ String WebAdminServer::getAdminPage() {
         </div>
       </div>
 
-      <!-- Tab Navigation -->
-      <div class="tab-nav">
-        <button class="tab-btn" onclick="switchTab('tab-network')">Network</button>
-        <button class="tab-btn" onclick="switchTab('tab-tiles-home')">Tiles Home</button>
-        <button class="tab-btn" onclick="switchTab('tab-tiles-game')">Tiles Game</button>
-        <button class="tab-btn" onclick="switchTab('tab-tiles-weather')">Tiles Weather</button>
-      </div>
-
       <!-- Tab 1: Network (MQTT Configuration) -->
       <div id="tab-network" class="tab-content">
         <form action="/mqtt" method="POST">
