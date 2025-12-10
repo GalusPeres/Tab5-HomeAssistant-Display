@@ -53,9 +53,9 @@ void WebAdminServer::handleSaveMQTT() {
   if (configManager.save(cfg)) {
     settings_show_mqtt_warning(false);
     // Reload all tile grids after MQTT config change
-    tiles_reload_layout(GridType::HOME);
-    tiles_reload_layout(GridType::GAME);
-    tiles_reload_layout(GridType::WEATHER);
+    tiles_reload_layout(GridType::TAB0);
+    tiles_reload_layout(GridType::TAB1);
+    tiles_reload_layout(GridType::TAB2);
     server.sendHeader("Location", "/");
     server.send(303, "text/plain", "");
   } else {
@@ -159,9 +159,9 @@ void WebAdminServer::handleSaveBridge() {
 
   if (haBridgeConfig.save(updated)) {
     // Reload all tile grids after bridge config change
-    tiles_reload_layout(GridType::HOME);
-    tiles_reload_layout(GridType::GAME);
-    tiles_reload_layout(GridType::WEATHER);
+    tiles_reload_layout(GridType::TAB0);
+    tiles_reload_layout(GridType::TAB1);
+    tiles_reload_layout(GridType::TAB2);
     mqttReloadDynamicSlots();
     server.sendHeader("Location", "/");
     server.send(303, "text/plain", "");
@@ -252,7 +252,7 @@ void WebAdminServer::handleSaveGameControls() {
 
   if (gameControlsConfig.save(updated)) {
     // Reload game tile grid after game controls change
-    tiles_reload_layout(GridType::GAME);
+    tiles_reload_layout(GridType::TAB1);
     server.sendHeader("Location", "/");
     server.send(303, "text/plain", "");
   } else {

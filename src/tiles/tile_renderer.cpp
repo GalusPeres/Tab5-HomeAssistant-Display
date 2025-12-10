@@ -82,8 +82,8 @@ static uint32_t g_queue_overflow_count = 0;
 static uint8_t get_sensor_decimals(GridType grid_type, uint8_t grid_index) {
   if (grid_index >= TILES_PER_GRID) return 0xFF;
   const TileGridConfig& grid = (grid_type == GridType::TAB1)
-                                 ? tileConfig.getGameGrid()
-                                 : (grid_type == GridType::TAB2 ? tileConfig.getWeatherGrid() : tileConfig.getHomeGrid());
+                                 ? tileConfig.getTab1Grid()
+                                 : (grid_type == GridType::TAB2 ? tileConfig.getTab2Grid() : tileConfig.getTab0Grid());
   return grid.tiles[grid_index].sensor_decimals;
 }
 
