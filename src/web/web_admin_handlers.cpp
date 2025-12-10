@@ -1,18 +1,12 @@
 #include "src/web/web_admin.h"
 #include "src/web/web_admin_utils.h"
 #include "src/network/network_manager.h"
-#include "src/ui/tab_home.h"
 #include "src/network/mqtt_handlers.h"
 #include "src/ui/tab_settings.h"
 #include "src/game/game_controls_config.h"
 #include "src/tiles/tile_config.h"
-#include "src/ui/tab_tiles_home.h"
-#include "src/ui/tab_tiles_game.h"
-#include "src/ui/tab_tiles_weather.h"
+#include "src/ui/tab_tiles_unified.h"
 #include <algorithm>
-
-// Forward declaration - kein Include von tab_game.h nötig
-extern void game_reload_layout();
 
 void WebAdminServer::handleSaveMQTT() {
   DeviceConfig cfg{};
@@ -58,7 +52,10 @@ void WebAdminServer::handleSaveMQTT() {
 
   if (configManager.save(cfg)) {
     settings_show_mqtt_warning(false);
-    home_reload_layout();
+    // Reload all tile grids after MQTT config change
+    tiles_reload_layout(GridType::HOME);
+    tiles_reload_layout(GridType::GAME);
+    tiles_reload_layout(GridType::WEATHER);
     server.sendHeader("Location", "/");
     server.send(303, "text/plain", "");
   } else {
@@ -161,7 +158,10 @@ void WebAdminServer::handleSaveBridge() {
   }
 
   if (haBridgeConfig.save(updated)) {
-    home_reload_layout();
+    // Reload all tile grids after bridge config change
+    tiles_reload_layout(GridType::HOME);
+    tiles_reload_layout(GridType::GAME);
+    tiles_reload_layout(GridType::WEATHER);
     mqttReloadDynamicSlots();
     server.sendHeader("Location", "/");
     server.send(303, "text/plain", "");
@@ -251,7 +251,8 @@ void WebAdminServer::handleSaveGameControls() {
   }
 
   if (gameControlsConfig.save(updated)) {
-    game_reload_layout();
+    // Reload game tile grid after game controls change
+    tiles_reload_layout(GridType::GAME);
     server.sendHeader("Location", "/");
     server.send(303, "text/plain", "");
   } else {
@@ -456,16 +457,9 @@ void WebAdminServer::handleSaveTiles() {
     Serial.println("[WebAdmin] MQTT Routes neu aufgebaut");
 
     // Update only the changed tile on display to avoid flicker
-    if (tab == "home") {
-      tiles_home_update_tile(static_cast<uint8_t>(index));
-      Serial.println("[WebAdmin] Home Tile aktualisiert");
-    } else if (tab == "game") {
-      tiles_game_update_tile(static_cast<uint8_t>(index));
-      Serial.println("[WebAdmin] Game Tile aktualisiert");
-    } else {
-      tiles_weather_update_tile(static_cast<uint8_t>(index));
-      Serial.println("[WebAdmin] Weather Tile aktualisiert");
-    }
+    GridType gridType = (tab == "home") ? GridType::HOME : (tab == "game") ? GridType::GAME : GridType::WEATHER;
+    tiles_update_tile(gridType, static_cast<uint8_t>(index));
+    Serial.printf("[WebAdmin] Tile %s[%d] aktualisiert\n", tab.c_str(), index);
 
     server.send(200, "application/json", "{\"success\":true}");
   } else {
@@ -497,16 +491,9 @@ void WebAdminServer::handleReorderTiles() {
   bool success = tileConfig.saveSingleGrid(grid_name, grid);
   if (success) {
     mqttReloadDynamicSlots();
-    if (tab == "home") {
-      tiles_home_update_tile(static_cast<uint8_t>(from));
-      tiles_home_update_tile(static_cast<uint8_t>(to));
-    } else if (tab == "game") {
-      tiles_game_update_tile(static_cast<uint8_t>(from));
-      tiles_game_update_tile(static_cast<uint8_t>(to));
-    } else {
-      tiles_weather_update_tile(static_cast<uint8_t>(from));
-      tiles_weather_update_tile(static_cast<uint8_t>(to));
-    }
+    GridType gridType = (tab == "home") ? GridType::HOME : (tab == "game") ? GridType::GAME : GridType::WEATHER;
+    tiles_update_tile(gridType, static_cast<uint8_t>(from));
+    tiles_update_tile(gridType, static_cast<uint8_t>(to));
     server.send(200, "application/json", "{\"success\":true}");
   } else {
     server.send(500, "application/json", "{\"success\":false,\"error\":\"Save failed\"}");

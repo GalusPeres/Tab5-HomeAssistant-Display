@@ -2,12 +2,9 @@
 #include "src/network/mqtt_topics.h"
 #include "src/network/network_manager.h"
 #include "src/network/ha_bridge_config.h"
-#include "src/ui/tab_home.h"
-#include "src/ui/tab_tiles_home.h"
-#include "src/ui/tab_tiles_game.h"
+#include "src/ui/tab_tiles_unified.h"
 #include "src/ui/tab_solar.h"
 #include "src/tiles/tile_config.h"
-#include "src/ui/tab_tiles_weather.h"
 #include <PubSubClient.h>
 #include <algorithm>
 #include <vector>
@@ -144,14 +141,10 @@ static void rebuildDynamicRoutes(std::vector<DynamicSensorRoute>& routes) {
 static bool tryHandleDynamicSensor(const char* topic, const char* payload) {
   for (const auto& route : g_dynamic_routes) {
     if (route.topic == topic) {
-      // Update old slot-based system
-      for (uint8_t slot : route.slots) {
-        home_set_sensor_slot_value(slot, payload);
-      }
-      // Update new tile-based system (display)
-      tiles_home_update_sensor_by_entity(route.entity_id.c_str(), payload);
-      tiles_game_update_sensor_by_entity(route.entity_id.c_str(), payload);
-      tiles_weather_update_sensor_by_entity(route.entity_id.c_str(), payload);
+      // Update tile-based system (display) - all grids
+      tiles_update_sensor_by_entity(GridType::HOME, route.entity_id.c_str(), payload);
+      tiles_update_sensor_by_entity(GridType::GAME, route.entity_id.c_str(), payload);
+      tiles_update_sensor_by_entity(GridType::WEATHER, route.entity_id.c_str(), payload);
       // Update sensor values map (for web interface)
       haBridgeConfig.updateSensorValue(route.entity_id, payload);
       return true;
@@ -185,7 +178,10 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
       yield();  // Nach JSON Parse
       networkManager.publishBridgeConfig();
       yield();  // Nach Publish
-      home_reload_layout();
+      // Reload all tile grids
+      tiles_reload_layout(GridType::HOME);
+      tiles_reload_layout(GridType::GAME);
+      tiles_reload_layout(GridType::WEATHER);
       yield();  // Nach Layout Reload
       mqttReloadDynamicSlots();
     } else {

@@ -1,13 +1,6 @@
 #include "src/ui/ui_manager.h"
 
-#include "src/ui/tab_tiles_home.h"
-#include "src/ui/tab_home.h"
-
-#include "src/ui/tab_tiles_game.h"
-#include "src/ui/tab_game.h"
-
-#include "src/ui/tab_tiles_weather.h"
-
+#include "src/ui/tab_tiles_unified.h"
 #include "src/ui/tab_settings.h"
 #include "font_roboto_mono_digits_48.h"
 #include "font_roboto_mono_digits_24.h"
@@ -123,9 +116,9 @@ void UIManager::buildUI(scene_publish_cb_t scene_cb, hotspot_start_cb_t hotspot_
   Serial.println("[UI] Sidebar fertig, lade nun Tiles...");
   // updateStatusbar() wird später in Loop aufgerufen wenn Fonts geladen sind
 
-  build_tiles_home_tab(tab_panels[0], scene_cb);
-  build_tiles_game_tab(tab_panels[1], scene_cb);
-  build_tiles_weather_tab(tab_panels[2], scene_cb);
+  build_tiles_tab(tab_panels[0], GridType::HOME, scene_cb);
+  build_tiles_tab(tab_panels[1], GridType::GAME, scene_cb);
+  build_tiles_tab(tab_panels[2], GridType::WEATHER, scene_cb);
   build_settings_tab(tab_panels[3], hotspot_cb);
 
   for (uint8_t i = 0; i < TAB_COUNT; ++i) {
