@@ -16,7 +16,7 @@
 static void appendTileTabHTML(
     String& html,
     uint8_t tab_index,
-    const TileGrid& grid,
+    const TileGridConfig& grid,
     const std::vector<String>& sensorOptions,
     const std::vector<SceneOption>& sceneOptions,
     const std::function<String(const String&, uint8_t)>& formatSensorValue
