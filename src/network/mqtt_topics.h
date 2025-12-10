@@ -16,8 +16,6 @@ enum class TopicKey : uint8_t {
   STAT_CONN,
   TELE_UP,
   HA_WOHN_TEMP,
-  HA_PV_GARAGE,
-  HA_PV_GARAGE_HISTORY,
   COUNT
 };
 

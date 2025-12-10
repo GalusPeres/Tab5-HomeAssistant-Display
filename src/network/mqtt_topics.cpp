@@ -10,8 +10,6 @@ const MqttTopicRegistry::TopicDescriptor MqttTopicRegistry::kDescriptors[] = {
   {TopicKey::STAT_CONN, TopicDomain::State, "connected"},
   {TopicKey::TELE_UP, TopicDomain::Telemetry, "uptime"},
   {TopicKey::HA_WOHN_TEMP, TopicDomain::HaStatestream, "sensor/og_wohnbereich_sensor_temperatur/state"},
-  {TopicKey::HA_PV_GARAGE, TopicDomain::HaStatestream, "sensor/pv_haus_garage/state"},
-  {TopicKey::HA_PV_GARAGE_HISTORY, TopicDomain::HaStatestream, "sensor/pv_haus_garage/history"},
 };
 
 void MqttTopicRegistry::begin(const TopicSettings& settings) {
