@@ -296,7 +296,7 @@ void WebAdminServer::handleGetTiles() {
     return;
   }
 
-  const TileGridConfig& grid = (tab == "home") ? tileConfig.getHomeGrid() : (tab == "game" ? tileConfig.getGameGrid() : tileConfig.getWeatherGrid());
+  const TileGridConfig& grid = (tab == "home" || tab == "tab0") ? tileConfig.getHomeGrid() : ((tab == "game" || tab == "tab1") ? tileConfig.getGameGrid() : tileConfig.getWeatherGrid());
 
   // Single tile request
   if (server.hasArg("index")) {
@@ -379,7 +379,7 @@ void WebAdminServer::handleSaveTiles() {
   }
 
   // Get current grid (mutable reference)
-  TileGridConfig& grid = (tab == "home") ? tileConfig.getHomeGrid() : (tab == "game" ? tileConfig.getGameGrid() : tileConfig.getWeatherGrid());
+  TileGridConfig& grid = (tab == "home" || tab == "tab0") ? tileConfig.getHomeGrid() : ((tab == "game" || tab == "tab1") ? tileConfig.getGameGrid() : tileConfig.getWeatherGrid());
   Tile& tile = grid.tiles[index];
 
   // Update tile data
@@ -446,7 +446,7 @@ void WebAdminServer::handleSaveTiles() {
   }
 
   // Save to NVS (nur das betroffene Grid)
-  const char* grid_name = (tab == "home") ? "home" : (tab == "game" ? "game" : "weather");
+  const char* grid_name = (tab == "home" || tab == "tab0") ? "home" : ((tab == "game" || tab == "tab1") ? "game" : "weather");
   bool success = tileConfig.saveSingleGrid(grid_name, grid);
 
   if (success) {
@@ -457,7 +457,7 @@ void WebAdminServer::handleSaveTiles() {
     Serial.println("[WebAdmin] MQTT Routes neu aufgebaut");
 
     // Update only the changed tile on display to avoid flicker
-    GridType gridType = (tab == "home") ? GridType::HOME : (tab == "game") ? GridType::GAME : GridType::WEATHER;
+    GridType gridType = (tab == "home" || tab == "tab0") ? GridType::HOME : ((tab == "game" || tab == "tab1") ? GridType::GAME : GridType::WEATHER);
     tiles_update_tile(gridType, static_cast<uint8_t>(index));
     Serial.printf("[WebAdmin] Tile %s[%d] aktualisiert\n", tab.c_str(), index);
 
@@ -484,14 +484,14 @@ void WebAdminServer::handleReorderTiles() {
     return;
   }
 
-  TileGridConfig& grid = (tab == "home") ? tileConfig.getHomeGrid() : (tab == "game" ? tileConfig.getGameGrid() : tileConfig.getWeatherGrid());
+  TileGridConfig& grid = (tab == "home" || tab == "tab0") ? tileConfig.getHomeGrid() : ((tab == "game" || tab == "tab1") ? tileConfig.getGameGrid() : tileConfig.getWeatherGrid());
   std::swap(grid.tiles[from], grid.tiles[to]);
 
-  const char* grid_name = (tab == "home") ? "home" : (tab == "game" ? "game" : "weather");
+  const char* grid_name = (tab == "home" || tab == "tab0") ? "home" : ((tab == "game" || tab == "tab1") ? "game" : "weather");
   bool success = tileConfig.saveSingleGrid(grid_name, grid);
   if (success) {
     mqttReloadDynamicSlots();
-    GridType gridType = (tab == "home") ? GridType::HOME : (tab == "game") ? GridType::GAME : GridType::WEATHER;
+    GridType gridType = (tab == "home" || tab == "tab0") ? GridType::HOME : ((tab == "game" || tab == "tab1") ? GridType::GAME : GridType::WEATHER);
     tiles_update_tile(gridType, static_cast<uint8_t>(from));
     tiles_update_tile(gridType, static_cast<uint8_t>(to));
     server.send(200, "application/json", "{\"success\":true}");
@@ -582,11 +582,11 @@ void WebAdminServer::handleRenameTab() {
   String name = server.arg("name");
 
   uint8_t tab_index = 255;
-  if (tab == "home" || tab == "0") {
+  if (tab == "home" || tab == "0" || tab == "tab0") {
     tab_index = 0;
-  } else if (tab == "game" || tab == "1") {
+  } else if (tab == "game" || tab == "1" || tab == "tab1") {
     tab_index = 1;
-  } else if (tab == "weather" || tab == "2") {
+  } else if (tab == "weather" || tab == "2" || tab == "tab2") {
     tab_index = 2;
   }
 

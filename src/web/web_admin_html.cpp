@@ -12,6 +12,259 @@
 #include "src/web/web_admin_styles.h"
 #include "src/tiles/tile_config.h"
 
+// Helper function to generate tile tab HTML (unified for all 3 tabs)
+static void appendTileTabHTML(
+    String& html,
+    uint8_t tab_index,
+    const TileGrid& grid,
+    const std::vector<String>& sensorOptions,
+    const std::vector<SceneOption>& sceneOptions,
+    const std::function<String(const String&, uint8_t)>& formatSensorValue
+) {
+  String tab_id = "tab" + String(tab_index);
+  String tab_label = "Tab " + String(tab_index + 1);
+
+  html += R"html(
+      <!-- Tile Tab )html";
+  html += String(tab_index);
+  html += R"html( -->
+      <div id="tab-tiles-)html";
+  html += tab_id;
+  html += R"html(" class="tab-content">
+        <p class="hint">Klicke auf eine Kachel, um sie zu bearbeiten. Wähle den Typ (Sensor/Szene/Key) und passe die Einstellungen an.</p>
+
+        <!-- Tab Settings (Above Grid) -->
+        <div class="tab-settings-top">
+          <h3 style="margin:0 0 12px;font-size:14px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;">Tab Einstellungen</h3>
+          <label style="font-size:13px;font-weight:600;color:#475569;display:block;margin-bottom:6px;">Tab-Name</label>
+          <input type="text" id=")html";
+  html += tab_id;
+  html += R"html(_tab_name" placeholder=")html";
+  html += tab_label;
+  html += R"html(" value=")html";
+  html += tileConfig.getTabName(tab_index);
+  html += R"html(" onchange="saveTabName()html";
+  html += String(tab_index);
+  html += R"html(, this.value)" style="width:100%;max-width:300px;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;box-sizing:border-box;">
+        </div>
+
+        <div class="tile-editor">
+          <!-- Grid Preview -->
+          <div class="tile-grid">
+)html";
+
+  // Generate 12 tiles
+  for (int i = 0; i < 12; i++) {
+    const Tile& tile = grid.tiles[i];
+    String cssClass = "tile";
+    String tileStyle = "";
+
+    if (tile.type == TILE_EMPTY) {
+      cssClass += " empty";
+    } else if (tile.type == TILE_SENSOR) {
+      cssClass += " sensor";
+      if (tile.bg_color != 0) {
+        char colorHex[8];
+        snprintf(colorHex, sizeof(colorHex), "#%06X", (unsigned int)tile.bg_color);
+        tileStyle = "background:";
+        tileStyle += colorHex;
+      } else {
+        tileStyle = "background:#2A2A2A";
+      }
+    } else if (tile.type == TILE_SCENE) {
+      cssClass += " scene";
+      if (tile.bg_color != 0) {
+        char colorHex[8];
+        snprintf(colorHex, sizeof(colorHex), "#%06X", (unsigned int)tile.bg_color);
+        tileStyle = "background:";
+        tileStyle += colorHex;
+      } else {
+        tileStyle = "background:#353535";
+      }
+    } else if (tile.type == TILE_KEY) {
+      cssClass += " key";
+      if (tile.bg_color != 0) {
+        char colorHex[8];
+        snprintf(colorHex, sizeof(colorHex), "#%06X", (unsigned int)tile.bg_color);
+        tileStyle = "background:";
+        tileStyle += colorHex;
+      } else {
+        tileStyle = "background:#353535";
+      }
+    }
+
+    html += "<div class=\"";
+    html += cssClass;
+    html += "\" data-index=\"";
+    html += String(i);
+    html += "\" draggable=\"true\" id=\"";
+    html += tab_id;
+    html += "-tile-";
+    html += String(i);
+    html += "\" style=\"";
+    html += tileStyle;
+    html += "\" onclick=\"selectTile(parseInt(this.dataset.index), '";
+    html += tab_id;
+    html += "')\">";
+
+    if (tile.type != TILE_EMPTY) {
+      html += "<div class=\"tile-title\" id=\"";
+      html += tab_id;
+      html += "-tile-";
+      html += String(i);
+      html += "-title\">";
+      if (tile.title.length()) {
+        appendHtmlEscaped(html, tile.title);
+      } else if (tile.type == TILE_SENSOR) {
+        html += "Sensor";
+      } else if (tile.type == TILE_SCENE) {
+        html += "Szene";
+      } else if (tile.type == TILE_KEY) {
+        html += "Key";
+      }
+      html += "</div>";
+    }
+
+    if (tile.type == TILE_SENSOR) {
+      html += "<div class=\"tile-value\" id=\"";
+      html += tab_id;
+      html += "-tile-";
+      html += String(i);
+      html += "-value\">";
+
+      String sensorValue = "--";
+      if (tile.sensor_entity.length()) {
+        sensorValue = haBridgeConfig.findSensorInitialValue(tile.sensor_entity);
+        sensorValue = formatSensorValue(sensorValue, tile.sensor_decimals);
+        if (sensorValue.length() == 0) {
+          sensorValue = "--";
+        }
+      }
+      appendHtmlEscaped(html, sensorValue);
+
+      if (tile.sensor_unit.length()) {
+        html += "<span class=\"tile-unit\">";
+        appendHtmlEscaped(html, tile.sensor_unit);
+        html += "</span>";
+      }
+      html += "</div>";
+    }
+
+    html += "</div>";
+  }
+
+  html += R"html(
+          </div>
+
+          <!-- Settings Panel -->
+          <div class="tile-settings" id=")html";
+  html += tab_id;
+  html += R"html(Settings">
+            <!-- Tile Settings (Visible only when tile selected) -->
+            <div class="tile-specific-settings hidden">
+              <h3 style="margin-top:0;">Kachel Einstellungen</h3>
+
+            <label>Typ</label>
+            <select id=")html";
+  html += tab_id;
+  html += R"html(_tile_type" onchange="updateTileType(')html";
+  html += tab_id;
+  html += R"html(')">
+              <option value="0">Leer</option>
+              <option value="1">Sensor</option>
+              <option value="2">Szene</option>
+              <option value="3">Key</option>
+            </select>
+
+            <label>Titel</label>
+            <input type="text" id=")html";
+  html += tab_id;
+  html += R"html(_tile_title" placeholder="Kachel-Titel">
+
+            <label>Farbe</label>
+            <input type="color" id=")html";
+  html += tab_id;
+  html += R"html(_tile_color" value="#2A2A2A" style="height:40px;">
+
+            <!-- Sensor Fields -->
+            <div id=")html";
+  html += tab_id;
+  html += R"html(_sensor_fields" class="type-fields">
+              <label>Sensor Entity</label>
+              <select id=")html";
+  html += tab_id;
+  html += R"html(_sensor_entity">
+                <option value="">Keine Auswahl</option>
+)html";
+
+  for (const auto& opt : sensorOptions) {
+    html += "<option value=\"";
+    appendHtmlEscaped(html, opt);
+    html += "\">";
+    String label = humanizeIdentifier(opt, true) + " - " + opt;
+    appendHtmlEscaped(html, label);
+    html += "</option>";
+  }
+
+  html += R"html(
+              </select>
+              <label>Einheit</label>
+              <input type="text" id=")html";
+  html += tab_id;
+  html += R"html(_sensor_unit" placeholder="z.B. °C">
+              <label>Nachkommastellen (leer = Originalwert)</label>
+              <input type="number" id=")html";
+  html += tab_id;
+  html += R"html(_sensor_decimals" min="0" max="6" step="1" placeholder="z.B. 1">
+            </div>
+
+            <!-- Scene Fields -->
+            <div id=")html";
+  html += tab_id;
+  html += R"html(_scene_fields" class="type-fields">
+              <label>Szene</label>
+              <select id=")html";
+  html += tab_id;
+  html += R"html(_scene_alias">
+                <option value="">Keine Auswahl</option>
+)html";
+
+  for (const auto& opt : sceneOptions) {
+    html += "<option value=\"";
+    appendHtmlEscaped(html, opt.alias);
+    html += "\">";
+    String label = humanizeIdentifier(opt.alias, false) + " - " + opt.entity;
+    appendHtmlEscaped(html, label);
+    html += "</option>";
+  }
+
+  html += R"html(
+              </select>
+            </div>
+
+            <!-- Key Fields -->
+            <div id=")html";
+  html += tab_id;
+  html += R"html(_key_fields" class="type-fields">
+              <label>Makro</label>
+              <input type="text" id=")html";
+  html += tab_id;
+  html += R"html(_key_macro" placeholder="z.B. ctrl+g">
+              <div style="font-size:11px;color:#64748b;margin-top:4px;">Beispiele: g, ctrl+g, ctrl+shift+a</div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:#64748b;">
+              <span>Änderungen werden automatisch gespeichert.</span>
+              <button type="button" class="btn" style="padding:8px 12px;font-size:12px;min-width:90px;" onclick="resetTile(')html";
+  html += tab_id;
+  html += R"html(')">Löschen</button>
+            </div>
+            </div><!-- /tile-specific-settings -->
+          </div>
+        </div>
+      </div>
+)html";
+}
+
 String WebAdminServer::getAdminPage() {
   const DeviceConfig& cfg = configManager.getConfig();
   const HaBridgeConfigData& ha = haBridgeConfig.get();
@@ -60,216 +313,30 @@ String WebAdminServer::getAdminPage() {
       <!-- Tab Navigation -->
       <div class="tab-nav">
         <button class="tab-btn" onclick="switchTab('tab-network')">Network</button>
-        <button class="tab-btn" onclick="switchTab('tab-tiles-home')">
+        <button class="tab-btn" onclick="switchTab('tab-tiles-tab0')">
           <span id="tab-name-0">)html";
   html += tileConfig.getTabName(0);
   html += R"html(</span>
         </button>
-        <button class="tab-btn" onclick="switchTab('tab-tiles-game')">
+        <button class="tab-btn" onclick="switchTab('tab-tiles-tab1')">
           <span id="tab-name-1">)html";
   html += tileConfig.getTabName(1);
   html += R"html(</span>
         </button>
-        <button class="tab-btn" onclick="switchTab('tab-tiles-weather')">
+        <button class="tab-btn" onclick="switchTab('tab-tiles-tab2')">
           <span id="tab-name-2">)html";
   html += tileConfig.getTabName(2);
   html += R"html(</span>
         </button>
       </div>
-
-      <!-- Tab 6: Tiles Weather Editor -->
-      <div id="tab-tiles-weather" class="tab-content">
-        <p class="hint">Klicke auf eine Kachel, um sie zu bearbeiten. Wähle den Typ (Sensor/Szene/Key) und passe die Einstellungen an.</p>
-
-        <!-- Tab Settings (Above Grid) -->
-        <div class="tab-settings-top">
-          <h3 style="margin:0 0 12px;font-size:14px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;">Tab Einstellungen</h3>
-          <label style="font-size:13px;font-weight:600;color:#475569;display:block;margin-bottom:6px;">Tab-Name</label>
-          <input type="text" id="weather_tab_name" placeholder="Tab 3" value=")html";
-  html += tileConfig.getTabName(2);
-  html += R"html(" onchange="saveTabName(2, this.value)" style="width:100%;max-width:300px;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;box-sizing:border-box;">
-        </div>
-
-        <div class="tile-editor">
-          <!-- Grid Preview -->
-          <div class="tile-grid">
 )html";
 
-  // Generate 12 tiles for Weather
-  for (int i = 0; i < 12; i++) {
-    const Tile& tile = tileConfig.getWeatherGrid().tiles[i];
-
-    String cssClass = "tile";
-    String tileStyle = "";
-
-    if (tile.type == TILE_EMPTY) {
-      cssClass += " empty";
-    } else if (tile.type == TILE_SENSOR) {
-      cssClass += " sensor";
-      if (tile.bg_color != 0) {
-        char colorHex[8];
-        snprintf(colorHex, sizeof(colorHex), "#%06X", (unsigned int)tile.bg_color);
-        tileStyle = "background:";
-        tileStyle += colorHex;
-      } else {
-        tileStyle = "background:#2A2A2A";
-      }
-    } else if (tile.type == TILE_SCENE) {
-      cssClass += " scene";
-      if (tile.bg_color != 0) {
-        char colorHex[8];
-        snprintf(colorHex, sizeof(colorHex), "#%06X", (unsigned int)tile.bg_color);
-        tileStyle = "background:";
-        tileStyle += colorHex;
-      } else {
-        tileStyle = "background:#353535";
-      }
-    } else if (tile.type == TILE_KEY) {
-      cssClass += " key";
-      if (tile.bg_color != 0) {
-        char colorHex[8];
-        snprintf(colorHex, sizeof(colorHex), "#%06X", (unsigned int)tile.bg_color);
-        tileStyle = "background:";
-        tileStyle += colorHex;
-      } else {
-        tileStyle = "background:#353535";
-      }
-    }
-
-    html += "<div class=\"";
-    html += cssClass;
-    html += "\" data-index=\"";
-    html += String(i);
-    html += "\" draggable=\"true\" id=\"weather-tile-";
-    html += String(i);
-    html += "\" style=\"";
-    html += tileStyle;
-    html += "\" onclick=\"selectTile(parseInt(this.dataset.index), 'weather')\">";
-
-    if (tile.type != TILE_EMPTY) {
-      html += "<div class=\"tile-title\" id=\"weather-tile-";
-      html += String(i);
-      html += "-title\">";
-      if (tile.title.length()) {
-        appendHtmlEscaped(html, tile.title);
-      } else if (tile.type == TILE_SENSOR) {
-        html += "Sensor";
-      } else if (tile.type == TILE_SCENE) {
-        html += "Szene";
-      } else if (tile.type == TILE_KEY) {
-        html += "Key";
-      }
-      html += "</div>";
-    }
-
-    if (tile.type == TILE_SENSOR) {
-      html += "<div class=\"tile-value\" id=\"weather-tile-";
-      html += String(i);
-      html += "-value\">";
-
-      String sensorValue = "--";
-      if (tile.sensor_entity.length()) {
-        sensorValue = haBridgeConfig.findSensorInitialValue(tile.sensor_entity);
-        sensorValue = formatSensorValue(sensorValue, tile.sensor_decimals);
-        if (sensorValue.length() == 0) {
-          sensorValue = "--";
-        }
-      }
-      appendHtmlEscaped(html, sensorValue);
-
-      if (tile.sensor_unit.length()) {
-        html += "<span class=\"tile-unit\">";
-        appendHtmlEscaped(html, tile.sensor_unit);
-        html += "</span>";
-      }
-      html += "</div>";
-    }
-
-    html += "</div>";
-  }
+  // Generate three unified tile tabs
+  appendTileTabHTML(html, 0, tileConfig.getHomeGrid(), sensorOptions, sceneOptions, formatSensorValue);
+  appendTileTabHTML(html, 1, tileConfig.getGameGrid(), sensorOptions, sceneOptions, formatSensorValue);
+  appendTileTabHTML(html, 2, tileConfig.getWeatherGrid(), sensorOptions, sceneOptions, formatSensorValue);
 
   html += R"html(
-          </div>
-
-          <!-- Settings Panel -->
-          <div class="tile-settings" id="weatherSettings">
-            <!-- Tile Settings (Visible only when tile selected) -->
-            <div class="tile-specific-settings hidden">
-              <h3 style="margin-top:0;">Kachel Einstellungen</h3>
-
-            <label>Typ</label>
-            <select id="weather_tile_type" onchange="updateTileType('weather')">
-              <option value="0">Leer</option>
-              <option value="1">Sensor</option>
-              <option value="2">Szene</option>
-              <option value="3">Key</option>
-            </select>
-
-            <label>Titel</label>
-            <input type="text" id="weather_tile_title" placeholder="Kachel-Titel">
-
-            <label>Farbe</label>
-            <input type="color" id="weather_tile_color" value="#2A2A2A" style="height:40px;">
-
-            <!-- Sensor Fields -->
-            <div id="weather_sensor_fields" class="type-fields">
-              <label>Sensor Entity</label>
-              <select id="weather_sensor_entity">
-                <option value="">Keine Auswahl</option>
-)html";
-
-  for (const auto& opt : sensorOptions) {
-    html += "<option value=\"";
-    appendHtmlEscaped(html, opt);
-    html += "\">";
-    String label = humanizeIdentifier(opt, true) + " - " + opt;
-    appendHtmlEscaped(html, label);
-    html += "</option>";
-  }
-
-  html += R"html(
-              </select>
-              <label>Einheit</label>
-              <input type="text" id="weather_sensor_unit" placeholder="z.B. C">
-              <label>Nachkommastellen (leer = Originalwert)</label>
-              <input type="number" id="weather_sensor_decimals" min="0" max="6" step="1" placeholder="z.B. 1">
-            </div>
-
-            <!-- Scene Fields -->
-            <div id="weather_scene_fields" class="type-fields">
-              <label>Szene</label>
-              <select id="weather_scene_alias">
-                <option value="">Keine Auswahl</option>
-)html";
-
-  for (const auto& opt : sceneOptions) {
-    html += "<option value=\"";
-    appendHtmlEscaped(html, opt.alias);
-    html += "\">";
-    String label = humanizeIdentifier(opt.alias, false) + " - " + opt.entity;
-    appendHtmlEscaped(html, label);
-    html += "</option>";
-  }
-
-  html += R"html(
-              </select>
-            </div>
-
-            <!-- Key Fields -->
-            <div id="weather_key_fields" class="type-fields">
-              <label>Makro</label>
-              <input type="text" id="weather_key_macro" placeholder="z.B. ctrl+g">
-              <div style="font-size:11px;color:#64748b;margin-top:4px;">Beispiele: g, ctrl+g, ctrl+shift+a</div>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:#64748b;">
-              <span>Aenderungen werden automatisch gespeichert.</span>
-              <button type="button" class="btn" style="padding:8px 12px;font-size:12px;min-width:90px;" onclick="resetTile('weather')">Löschen</button>
-            </div>
-            </div><!-- /tile-specific-settings -->
-          </div>
-        </div>
-      </div>
-
       <!-- Tab 1: Network (MQTT Configuration) -->
       <div id="tab-network" class="tab-content">
         <div class="status">
@@ -332,420 +399,6 @@ String WebAdminServer::getAdminPage() {
           </div>
           <button class="btn" type="submit">Speichern</button>
         </form>
-      </div>
-
-      <!-- Tab 2: Tiles Home Editor -->
-      <div id="tab-tiles-home" class="tab-content">
-        <p class="hint">Klicke auf eine Kachel, um sie zu bearbeiten. WÃƒÂ¤hle den Typ (Sensor/Szene/Key) und passe die Einstellungen an.</p>
-
-        <!-- Tab Settings (Above Grid) -->
-        <div class="tab-settings-top">
-          <h3 style="margin:0 0 12px;font-size:14px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;">Tab Einstellungen</h3>
-          <label style="font-size:13px;font-weight:600;color:#475569;display:block;margin-bottom:6px;">Tab-Name</label>
-          <input type="text" id="home_tab_name" placeholder="Tab 1" value=")html";
-  html += tileConfig.getTabName(0);
-  html += R"html(" onchange="saveTabName(0, this.value)" style="width:100%;max-width:300px;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;box-sizing:border-box;">
-        </div>
-
-        <div class="tile-editor">
-          <!-- Grid Preview -->
-          <div class="tile-grid">
-)html";
-
-  // Generate 12 tiles for Home
-  for (int i = 0; i < 12; i++) {
-    const Tile& tile = tileConfig.getHomeGrid().tiles[i];
-
-    // CSS-Klassen und Farben wie im Display
-    String cssClass = "tile";
-    String tileStyle = "";
-
-    if (tile.type == TILE_EMPTY) {
-      cssClass += " empty";
-      // Empty: kein background (transparent)
-    } else if (tile.type == TILE_SENSOR) {
-      cssClass += " sensor";
-      // Sensor: Standard 0x2A2A2A
-      if (tile.bg_color != 0) {
-        char colorHex[8];
-        snprintf(colorHex, sizeof(colorHex), "#%06X", (unsigned int)tile.bg_color);
-        tileStyle = "background:";
-        tileStyle += colorHex;
-      } else {
-        tileStyle = "background:#2A2A2A";
-      }
-    } else if (tile.type == TILE_SCENE) {
-      cssClass += " scene";
-      // Scene: Standard 0x353535
-      if (tile.bg_color != 0) {
-        char colorHex[8];
-        snprintf(colorHex, sizeof(colorHex), "#%06X", (unsigned int)tile.bg_color);
-        tileStyle = "background:";
-        tileStyle += colorHex;
-      } else {
-        tileStyle = "background:#353535";
-      }
-    } else if (tile.type == TILE_KEY) {
-      cssClass += " key";
-      // Key: Standard 0x353535
-      if (tile.bg_color != 0) {
-        char colorHex[8];
-        snprintf(colorHex, sizeof(colorHex), "#%06X", (unsigned int)tile.bg_color);
-        tileStyle = "background:";
-        tileStyle += colorHex;
-      } else {
-        tileStyle = "background:#353535";
-      }
-    }
-
-    html += "<div class=\"";
-    html += cssClass;
-    html += "\" data-index=\"";
-    html += String(i);
-    html += "\" draggable=\"true\" id=\"home-tile-";
-    html += String(i);
-    html += "\" style=\"";
-    html += tileStyle;
-    html += "\" onclick=\"selectTile(parseInt(this.dataset.index), 'home')\">";
-
-    // Title - nur wenn nicht EMPTY
-    if (tile.type != TILE_EMPTY) {
-      html += "<div class=\"tile-title\" id=\"home-tile-";
-      html += String(i);
-      html += "-title\">";
-      if (tile.title.length()) {
-        appendHtmlEscaped(html, tile.title);
-      } else if (tile.type == TILE_SENSOR) {
-        html += "Sensor";
-      } else if (tile.type == TILE_SCENE) {
-        html += "Szene";
-      } else if (tile.type == TILE_KEY) {
-        html += "Key";
-      }
-      html += "</div>";
-    }
-
-    // Value (for sensors)
-    if (tile.type == TILE_SENSOR) {
-      html += "<div class=\"tile-value\" id=\"home-tile-";
-      html += String(i);
-      html += "-value\">";
-
-      // Get actual sensor value from map
-      String sensorValue = "--";
-      if (tile.sensor_entity.length()) {
-        sensorValue = haBridgeConfig.findSensorInitialValue(tile.sensor_entity);
-        sensorValue = formatSensorValue(sensorValue, tile.sensor_decimals);
-        Serial.printf("[WebAdmin] Home Tile %d: Entity=%s, Value=%s (dec=%u)\n",
-                      i, tile.sensor_entity.c_str(),
-                      sensorValue.length() ? sensorValue.c_str() : "(empty)",
-                      static_cast<unsigned>(tile.sensor_decimals));
-        if (sensorValue.length() == 0) {
-          sensorValue = "--";
-        }
-      }
-      appendHtmlEscaped(html, sensorValue);
-
-      if (tile.sensor_unit.length()) {
-        html += "<span class=\"tile-unit\">";
-        appendHtmlEscaped(html, tile.sensor_unit);
-        html += "</span>";
-      }
-      html += "</div>";
-    }
-
-    html += "</div>";
-  }
-
-  html += R"html(
-          </div>
-
-          <!-- Settings Panel -->
-          <div class="tile-settings" id="homeSettings">
-            <!-- Tile Settings (Visible only when tile selected) -->
-            <div class="tile-specific-settings hidden">
-              <h3 style="margin-top:0;">Kachel Einstellungen</h3>
-
-            <label>Typ</label>
-            <select id="home_tile_type" onchange="updateTileType('home')">
-              <option value="0">Leer</option>
-              <option value="1">Sensor</option>
-              <option value="2">Szene</option>
-              <option value="3">Key</option>
-            </select>
-
-            <label>Titel</label>
-            <input type="text" id="home_tile_title" placeholder="Kachel-Titel">
-
-            <label>Farbe</label>
-            <input type="color" id="home_tile_color" value="#2A2A2A" style="height:40px;">
-
-            <!-- Sensor Fields -->
-            <div id="home_sensor_fields" class="type-fields">
-              <label>Sensor Entity</label>
-              <select id="home_sensor_entity">
-                <option value="">Keine Auswahl</option>
-)html";
-
-  // Add sensor options
-  for (const auto& opt : sensorOptions) {
-    html += "<option value=\"";
-    appendHtmlEscaped(html, opt);
-    html += "\">";
-    String label = humanizeIdentifier(opt, true) + " - " + opt;
-    appendHtmlEscaped(html, label);
-    html += "</option>";
-  }
-
-  html += R"html(
-              </select>
-              <label>Einheit</label>
-              <input type="text" id="home_sensor_unit" placeholder="z.B. Ã‚Â°C">
-              <label>Nachkommastellen (leer = Originalwert)</label>
-              <input type="number" id="home_sensor_decimals" min="0" max="6" step="1" placeholder="z.B. 1">
-            </div>
-
-            <!-- Scene Fields -->
-            <div id="home_scene_fields" class="type-fields">
-              <label>Szene</label>
-              <select id="home_scene_alias">
-                <option value="">Keine Auswahl</option>
-)html";
-
-  // Add scene options
-  for (const auto& opt : sceneOptions) {
-    html += "<option value=\"";
-    appendHtmlEscaped(html, opt.alias);
-    html += "\">";
-    String label = humanizeIdentifier(opt.alias, false) + " - " + opt.entity;
-    appendHtmlEscaped(html, label);
-    html += "</option>";
-  }
-
-  html += R"html(
-              </select>
-            </div>
-
-            <!-- Key Fields -->
-            <div id="home_key_fields" class="type-fields">
-              <label>Makro</label>
-              <input type="text" id="home_key_macro" placeholder="z.B. ctrl+g">
-              <div style="font-size:11px;color:#64748b;margin-top:4px;">Beispiele: g, ctrl+g, ctrl+shift+a</div>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:#64748b;">
-              <span>Änderungen werden automatisch gespeichert.</span>
-              <button type="button" class="btn" style="padding:8px 12px;font-size:12px;min-width:90px;" onclick="resetTile('home')">Löschen</button>
-            </div>
-            </div><!-- /tile-specific-settings -->
-          </div>
-        </div>
-      </div>
-
-      <!-- Tab 5: Tiles Game Editor -->
-      <div id="tab-tiles-game" class="tab-content">
-        <p class="hint">Klicke auf eine Kachel, um sie zu bearbeiten. WÃƒÂ¤hle den Typ (Sensor/Szene/Key) und passe die Einstellungen an.</p>
-
-        <!-- Tab Settings (Above Grid) -->
-        <div class="tab-settings-top">
-          <h3 style="margin:0 0 12px;font-size:14px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;">Tab Einstellungen</h3>
-          <label style="font-size:13px;font-weight:600;color:#475569;display:block;margin-bottom:6px;">Tab-Name</label>
-          <input type="text" id="game_tab_name" placeholder="Tab 2" value=")html";
-  html += tileConfig.getTabName(1);
-  html += R"html(" onchange="saveTabName(1, this.value)" style="width:100%;max-width:300px;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;box-sizing:border-box;">
-        </div>
-
-        <div class="tile-editor">
-          <!-- Grid Preview -->
-          <div class="tile-grid">
-)html";
-
-  // Generate 12 tiles for Game
-  for (int i = 0; i < 12; i++) {
-    const Tile& tile = tileConfig.getGameGrid().tiles[i];
-
-    // CSS-Klassen und Farben wie im Display
-    String cssClass = "tile";
-    String tileStyle = "";
-
-    if (tile.type == TILE_EMPTY) {
-      cssClass += " empty";
-      // Empty: kein background (transparent)
-    } else if (tile.type == TILE_SENSOR) {
-      cssClass += " sensor";
-      // Sensor: Standard 0x2A2A2A
-      if (tile.bg_color != 0) {
-        char colorHex[8];
-        snprintf(colorHex, sizeof(colorHex), "#%06X", (unsigned int)tile.bg_color);
-        tileStyle = "background:";
-        tileStyle += colorHex;
-      } else {
-        tileStyle = "background:#2A2A2A";
-      }
-    } else if (tile.type == TILE_SCENE) {
-      cssClass += " scene";
-      // Scene: Standard 0x353535
-      if (tile.bg_color != 0) {
-        char colorHex[8];
-        snprintf(colorHex, sizeof(colorHex), "#%06X", (unsigned int)tile.bg_color);
-        tileStyle = "background:";
-        tileStyle += colorHex;
-      } else {
-        tileStyle = "background:#353535";
-      }
-    } else if (tile.type == TILE_KEY) {
-      cssClass += " key";
-      // Key: Standard 0x353535
-      if (tile.bg_color != 0) {
-        char colorHex[8];
-        snprintf(colorHex, sizeof(colorHex), "#%06X", (unsigned int)tile.bg_color);
-        tileStyle = "background:";
-        tileStyle += colorHex;
-      } else {
-        tileStyle = "background:#353535";
-      }
-    }
-
-    html += "<div class=\"";
-    html += cssClass;
-    html += "\" data-index=\"";
-    html += String(i);
-    html += "\" draggable=\"true\" id=\"game-tile-";
-    html += String(i);
-    html += "\" style=\"";
-    html += tileStyle;
-    html += "\" onclick=\"selectTile(parseInt(this.dataset.index), 'game')\">";
-
-    // Title - nur wenn nicht EMPTY
-    if (tile.type != TILE_EMPTY) {
-      html += "<div class=\"tile-title\" id=\"game-tile-";
-      html += String(i);
-      html += "-title\">";
-      if (tile.title.length()) {
-        appendHtmlEscaped(html, tile.title);
-      } else if (tile.type == TILE_SENSOR) {
-        html += "Sensor";
-      } else if (tile.type == TILE_SCENE) {
-        html += "Szene";
-      } else if (tile.type == TILE_KEY) {
-        html += "Key";
-      }
-      html += "</div>";
-    }
-
-    // Value (for sensors)
-    if (tile.type == TILE_SENSOR) {
-      html += "<div class=\"tile-value\" id=\"game-tile-";
-      html += String(i);
-      html += "-value\">";
-
-      // Get actual sensor value from map
-      String sensorValue = "--";
-      if (tile.sensor_entity.length()) {
-        sensorValue = haBridgeConfig.findSensorInitialValue(tile.sensor_entity);
-        sensorValue = formatSensorValue(sensorValue, tile.sensor_decimals);
-        Serial.printf("[WebAdmin] Game Tile %d: Entity=%s, Value=%s (dec=%u)\n",
-                      i, tile.sensor_entity.c_str(),
-                      sensorValue.length() ? sensorValue.c_str() : "(empty)",
-                      static_cast<unsigned>(tile.sensor_decimals));
-        if (sensorValue.length() == 0) {
-          sensorValue = "--";
-        }
-      }
-      appendHtmlEscaped(html, sensorValue);
-
-      if (tile.sensor_unit.length()) {
-        html += "<span class=\"tile-unit\">";
-        appendHtmlEscaped(html, tile.sensor_unit);
-        html += "</span>";
-      }
-      html += "</div>";
-    }
-
-    html += "</div>";
-  }
-
-  html += R"html(
-          </div>
-
-          <!-- Settings Panel -->
-          <div class="tile-settings" id="gameSettings">
-            <!-- Tile Settings (Visible only when tile selected) -->
-            <div class="tile-specific-settings hidden">
-              <h3 style="margin-top:0;">Kachel Einstellungen</h3>
-
-            <label>Typ</label>
-            <select id="game_tile_type" onchange="updateTileType('game')">
-              <option value="0">Leer</option>
-              <option value="1">Sensor</option>
-              <option value="2">Szene</option>
-              <option value="3">Key</option>
-            </select>
-
-            <label>Titel</label>
-            <input type="text" id="game_tile_title" placeholder="Kachel-Titel">
-
-            <label>Farbe</label>
-            <input type="color" id="game_tile_color" value="#2A2A2A" style="height:40px;">
-
-            <!-- Sensor Fields -->
-            <div id="game_sensor_fields" class="type-fields">
-              <label>Sensor Entity</label>
-              <select id="game_sensor_entity">
-                <option value="">Keine Auswahl</option>
-)html";
-
-  // Add sensor options for game
-  for (const auto& opt : sensorOptions) {
-    html += "<option value=\"";
-    appendHtmlEscaped(html, opt);
-    html += "\">";
-    String label = humanizeIdentifier(opt, true) + " - " + opt;
-    appendHtmlEscaped(html, label);
-    html += "</option>";
-  }
-
-  html += R"html(
-              </select>
-              <label>Einheit</label>
-              <input type="text" id="game_sensor_unit" placeholder="z.B. Ã‚Â°C">
-              <label>Nachkommastellen (leer = Originalwert)</label>
-              <input type="number" id="game_sensor_decimals" min="0" max="6" step="1" placeholder="z.B. 1">
-            </div>
-
-            <!-- Scene Fields -->
-            <div id="game_scene_fields" class="type-fields">
-              <label>Szene</label>
-              <select id="game_scene_alias">
-                <option value="">Keine Auswahl</option>
-)html";
-
-  // Add scene options for game
-  for (const auto& opt : sceneOptions) {
-    html += "<option value=\"";
-    appendHtmlEscaped(html, opt.alias);
-    html += "\">";
-    String label = humanizeIdentifier(opt.alias, false) + " - " + opt.entity;
-    appendHtmlEscaped(html, label);
-    html += "</option>";
-  }
-
-  html += R"html(
-              </select>
-            </div>
-
-            <!-- Key Fields -->
-            <div id="game_key_fields" class="type-fields">
-              <label>Makro</label>
-              <input type="text" id="game_key_macro" placeholder="z.B. ctrl+g">
-              <div style="font-size:11px;color:#64748b;margin-top:4px;">Beispiele: g, ctrl+g, ctrl+shift+a</div>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:#64748b;">
-              <span>Änderungen werden automatisch gespeichert.</span>
-              <button type="button" class="btn" style="padding:8px 12px;font-size:12px;min-width:90px;" onclick="resetTile('game')">Löschen</button>
-            </div>
-            </div><!-- /tile-specific-settings -->
-          </div>
-        </div>
       </div>
 
       <!-- Restart button at bottom (always visible) -->
@@ -849,6 +502,3 @@ String WebAdminServer::getStatusJSON() {
   json += "}";
   return json;
 }
-
-
-

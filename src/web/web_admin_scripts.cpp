@@ -41,13 +41,13 @@ void appendAdminScripts(String& html) {
   }
 
   // Tile Editor State
-  const tileTabs = ['home', 'game', 'weather'];
-  let currentTileTab = 'home';
+  const tileTabs = ['tab0', 'tab1', 'tab2'];
+  let currentTileTab = 'tab0';
   let currentTileIndex = -1;
-  let drafts = { home: {}, game: {}, weather: {} };
-  let homeTilesData = [];
-  let gameTilesData = [];
-  let weatherTilesData = [];
+  let drafts = { tab0: {}, tab1: {}, tab2: {} };
+  let tab0TilesData = [];
+  let tab1TilesData = [];
+  let tab2TilesData = [];
 
   function persistDrafts() { try { localStorage.setItem('tileDrafts', JSON.stringify(drafts)); } catch (e) {} }
   function loadDraftsFromStorage() {
@@ -55,7 +55,7 @@ void appendAdminScripts(String& html) {
       const raw = localStorage.getItem('tileDrafts');
       if (raw) drafts = JSON.parse(raw);
     } catch (e) {
-      drafts = { home: {}, game: {}, weather: {} };
+      drafts = { tab0: {}, tab1: {}, tab2: {} };
     }
   }
   function clearDraft(tab, index) {
@@ -332,7 +332,7 @@ void appendAdminScripts(String& html) {
     setTimeout(() => { notification.classList.remove('show'); }, 3000);
   }
 
-  let autoSaveTimers = { home: null, game: null, weather: null };
+  let autoSaveTimers = { tab0: null, tab1: null, tab2: null };
   function scheduleAutoSave(tab) {
     if (autoSaveTimers[tab]) clearTimeout(autoSaveTimers[tab]);
     autoSaveTimers[tab] = setTimeout(() => saveTile(tab, true), 250);
@@ -418,17 +418,17 @@ void appendAdminScripts(String& html) {
   function loadSensorValues() {
     Promise.all([
       fetch('/api/sensor_values').then(res => res.json()),
-      fetch('/api/tiles?tab=home').then(res => res.json()),
-      fetch('/api/tiles?tab=game').then(res => res.json()),
-      fetch('/api/tiles?tab=weather').then(res => res.json())
+      fetch('/api/tiles?tab=tab0').then(res => res.json()),
+      fetch('/api/tiles?tab=tab1').then(res => res.json()),
+      fetch('/api/tiles?tab=tab2').then(res => res.json())
     ])
-    .then(([sensorValues, homeTiles, gameTiles, weatherTiles]) => {
-      homeTilesData = homeTiles;
-      gameTilesData = gameTiles;
-      weatherTilesData = weatherTiles;
-      homeTiles.forEach((tile, idx) => renderTileFromData('home', idx, tile, sensorValues));
-      gameTiles.forEach((tile, idx) => renderTileFromData('game', idx, tile, sensorValues));
-      weatherTiles.forEach((tile, idx) => renderTileFromData('weather', idx, tile, sensorValues));
+    .then(([sensorValues, tab0Tiles, tab1Tiles, tab2Tiles]) => {
+      tab0TilesData = tab0Tiles;
+      tab1TilesData = tab1Tiles;
+      tab2TilesData = tab2Tiles;
+      tab0Tiles.forEach((tile, idx) => renderTileFromData('tab0', idx, tile, sensorValues));
+      tab1Tiles.forEach((tile, idx) => renderTileFromData('tab1', idx, tile, sensorValues));
+      tab2Tiles.forEach((tile, idx) => renderTileFromData('tab2', idx, tile, sensorValues));
       if (currentTileIndex !== -1) {
         const tab = currentTileTab;
         const settingsId = tab + 'Settings';
@@ -526,13 +526,13 @@ void appendAdminScripts(String& html) {
     loadSensorValues();
     let savedTab = null;
     try { savedTab = localStorage.getItem('activeAdminTab'); } catch (e) {}
-    const targetTab = savedTab && document.getElementById(savedTab) ? savedTab : 'tab-tiles-home';
+    const targetTab = savedTab && document.getElementById(savedTab) ? savedTab : 'tab-tiles-tab0';
     const targetBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => btn.getAttribute('onclick')?.includes(targetTab)) || document.querySelector('.tab-btn');
     if (targetBtn) targetBtn.click();
     setInterval(loadSensorValues, 5000);
-    enableTileDrag('home');
-    enableTileDrag('game');
-    enableTileDrag('weather');
+    enableTileDrag('tab0');
+    enableTileDrag('tab1');
+    enableTileDrag('tab2');
   });
   </script>
 )html";
