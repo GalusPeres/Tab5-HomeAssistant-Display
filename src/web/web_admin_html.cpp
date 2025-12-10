@@ -586,6 +586,19 @@ String WebAdminServer::getStatusJSON() {
   nvs_stats_t stats{};
   bool stats_ok = (nvs_get_stats(nullptr, &stats) == ESP_OK);
 
+  auto get_ns_used = [](const char* ns) -> size_t {
+    if (!ns) return static_cast<size_t>(-1);
+    nvs_handle_t h = 0;
+    if (nvs_open(ns, NVS_READONLY, &h) != ESP_OK) return static_cast<size_t>(-1);
+    size_t used = 0;
+    esp_err_t err = nvs_get_used_entry_count(h, &used);
+    nvs_close(h);
+    return (err == ESP_OK) ? used : static_cast<size_t>(-1);
+  };
+
+  size_t tiles_used = get_ns_used("tab5_tiles");
+  size_t config_used = get_ns_used("tab5_config");
+
   String json = "{";
   json += "\"wifi_connected\":";
   json += (WiFi.status() == WL_CONNECTED) ? "true" : "false";
@@ -600,6 +613,8 @@ String WebAdminServer::getStatusJSON() {
   json += ",\"nvs_used_entries\":" + String(stats_ok ? stats.used_entries : -1);
   json += ",\"nvs_free_entries\":" + String(stats_ok ? stats.free_entries : -1);
   json += ",\"nvs_namespace_count\":" + String(stats_ok ? stats.namespace_count : -1);
+  json += ",\"nvs_tab5_tiles_used\":" + String(tiles_used);
+  json += ",\"nvs_tab5_config_used\":" + String(config_used);
   json += "}";
   return json;
 }
