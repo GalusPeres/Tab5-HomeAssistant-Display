@@ -408,3 +408,15 @@ src/web/web_admin_scripts.cpp   (3-tab JavaScript)
 - Weather-Grid wieder aktiv und nutzt denselben Tile-Renderer wie Home/Game.
 - Web-Admin erweitert um dritten Tiles-Tab (Weather) inkl. Drag&Drop, Auto-Save und API-Support (`tab=weather` in /api/tiles und /api/tiles/reorder).
 - MQTT-Dynamik erweitert: Sensor-Updates werden auch ins Weather-Grid gemappt.
+
+## Update 2025-12-11 (NVS-Sparen & Web-Admin Navigation)
+
+- NVS: Tiles werden nur noch als Blob pro Grid gespeichert (fixe Feldlängen). Ein Grid-Blob (~2.2 KB) belegt ~70 NVS-Entries statt >100 Keys pro Grid; Legacy-Keys werden beim Laden/Speichern gelöscht. `/api/status` zeigt pro Namespace `nvs_tab5_tiles_used`/`nvs_tab5_config_used`.
+- Web-Admin: Tab-Navigation oben, WiFi/SSID/IP nur im Network-Tab, Weather-Tab voll integriert.
+- Persistenz der drei Grids (Home/Game/Weather) mit `saveSingleGrid`, Migration von alten Keys läuft automatisch.
+
+## Nächste Schritte (Plan)
+
+- Einheitliches Tab/Page-Layout für alle drei Tile-Tabs: gemeinsamer Codepfad für UI/Editor/Save (kein Copy/Paste), schnelle Bedienung, gleiche Komponenten.
+- Tabs/Seiten sollen konfigurierbar sein (Titel, evtl. Optionen) mit minimalem Code-Duplikat.
+- Ziel: stabile Basis, leicht wartbar, einheitliches Verhalten, schnelle Saves.
