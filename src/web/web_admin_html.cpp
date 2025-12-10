@@ -65,28 +65,6 @@ String WebAdminServer::getAdminPage() {
         <button class="tab-btn" onclick="switchTab('tab-tiles-weather')">Tiles Weather</button>
       </div>
 
-      <!-- WiFi Status at top -->
-      <div class="status">
-        <div>
-          <div class="status-label">WiFi Status</div>
-          <div class="status-value">)html";
-  html += (WiFi.status() == WL_CONNECTED) ? "Verbunden" : "Getrennt";
-  html += R"html(</div>
-        </div>
-        <div>
-          <div class="status-label">SSID</div>
-          <div class="status-value">)html";
-  html += WiFi.SSID();
-  html += R"html(</div>
-        </div>
-        <div>
-          <div class="status-label">IP-Adresse</div>
-          <div class="status-value">)html";
-  html += WiFi.localIP().toString();
-  html += R"html(</div>
-        </div>
-      </div>
-
       <!-- Tab 6: Tiles Weather Editor -->
       <div id="tab-tiles-weather" class="tab-content">
         <p class="hint">Klicke auf eine Kachel, um sie zu bearbeiten. Wähle den Typ (Sensor/Szene/Key) und passe die Einstellungen an.</p>
@@ -269,6 +247,27 @@ String WebAdminServer::getAdminPage() {
 
       <!-- Tab 1: Network (MQTT Configuration) -->
       <div id="tab-network" class="tab-content">
+        <div class="status">
+          <div>
+            <div class="status-label">WiFi Status</div>
+            <div class="status-value">)html";
+  html += (WiFi.status() == WL_CONNECTED) ? "Verbunden" : "Getrennt";
+  html += R"html(</div>
+          </div>
+          <div>
+            <div class="status-label">SSID</div>
+            <div class="status-value">)html";
+  html += WiFi.SSID();
+  html += R"html(</div>
+          </div>
+          <div>
+            <div class="status-label">IP-Adresse</div>
+            <div class="status-value">)html";
+  html += WiFi.localIP().toString();
+  html += R"html(</div>
+          </div>
+        </div>
+
         <form action="/mqtt" method="POST">
           <div>
             <label for="mqtt_host">MQTT Host / IP</label>
