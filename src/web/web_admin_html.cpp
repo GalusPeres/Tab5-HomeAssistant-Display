@@ -119,7 +119,7 @@ static void appendTileTabHTML(
 
       if (hasIcon) {
         html += "<i class=\"mdi mdi-";
-        appendHtmlEscaped(html, iconName);
+        html += iconName;  // Direkt hinzufügen (CSS-Klasse darf nicht escaped werden!)
         html += " tile-icon\"></i>";
       }
 
