@@ -322,14 +322,23 @@ lv_obj_t* render_scene_tile(lv_obj_t* parent, int col, int row, const Tile& tile
 
   // Icon Label (optional, falls icon_name vorhanden)
   lv_obj_t* icon_lbl = nullptr;
-  if (tile.icon_name.length() > 0 && FONT_MDI_ICONS != nullptr) {
+  bool has_icon = tile.icon_name.length() > 0;
+  bool has_title = tile.title.length() > 0;
+
+  if (has_icon && FONT_MDI_ICONS != nullptr) {
     String iconChar = getMdiChar(tile.icon_name);
     if (iconChar.length() > 0) {
       icon_lbl = lv_label_create(btn);
       if (icon_lbl) {
         set_label_style(icon_lbl, lv_color_white(), FONT_MDI_ICONS);
         lv_label_set_text(icon_lbl, iconChar.c_str());
-        lv_obj_align(icon_lbl, LV_ALIGN_CENTER, 0, -20);  // Icon oben-zentriert
+
+        // Flexible Positionierung: Icon + Title = 2 Zeilen mittig, nur Icon = 1 Zeile mittig
+        if (has_title) {
+          lv_obj_align(icon_lbl, LV_ALIGN_CENTER, 0, -20);  // Icon oben (mit Title)
+        } else {
+          lv_obj_center(icon_lbl);  // Icon mittig (ohne Title)
+        }
       }
     }
   }
@@ -337,13 +346,13 @@ lv_obj_t* render_scene_tile(lv_obj_t* parent, int col, int row, const Tile& tile
   // Title Label
   lv_obj_t* l = lv_label_create(btn);
   set_label_style(l, lv_color_white(), FONT_TITLE);
-  lv_label_set_text(l, tile.title.length() ? tile.title.c_str() : "Szene");
+  lv_label_set_text(l, has_title ? tile.title.c_str() : "Szene");
 
-  // Position abhängig von Icon: mit Icon unten, ohne Icon zentriert
-  if (icon_lbl) {
-    lv_obj_align(l, LV_ALIGN_CENTER, 0, 35);  // Text unten unter Icon
+  // Flexible Positionierung: Icon + Title = 2 Zeilen mittig, nur Title = 1 Zeile mittig
+  if (icon_lbl && has_title) {
+    lv_obj_align(l, LV_ALIGN_CENTER, 0, 35);  // Title unten (mit Icon)
   } else {
-    lv_obj_center(l);  // Text zentriert (wie bisher)
+    lv_obj_center(l);  // Title mittig (ohne Icon oder als Fallback)
   }
 
   // Event-Handler für Scene-Aktivierung
@@ -398,14 +407,23 @@ lv_obj_t* render_key_tile(lv_obj_t* parent, int col, int row, const Tile& tile, 
 
   // Icon Label (optional, falls icon_name vorhanden) - wie bei Scene
   lv_obj_t* icon_lbl = nullptr;
-  if (tile.icon_name.length() > 0 && FONT_MDI_ICONS != nullptr) {
+  bool has_icon = tile.icon_name.length() > 0;
+  bool has_title = tile.title.length() > 0;
+
+  if (has_icon && FONT_MDI_ICONS != nullptr) {
     String iconChar = getMdiChar(tile.icon_name);
     if (iconChar.length() > 0) {
       icon_lbl = lv_label_create(btn);
       if (icon_lbl) {
         set_label_style(icon_lbl, lv_color_white(), FONT_MDI_ICONS);
         lv_label_set_text(icon_lbl, iconChar.c_str());
-        lv_obj_align(icon_lbl, LV_ALIGN_CENTER, 0, -20);  // Icon oben-zentriert
+
+        // Flexible Positionierung: Icon + Title = 2 Zeilen mittig, nur Icon = 1 Zeile mittig
+        if (has_title) {
+          lv_obj_align(icon_lbl, LV_ALIGN_CENTER, 0, -20);  // Icon oben (mit Title)
+        } else {
+          lv_obj_center(icon_lbl);  // Icon mittig (ohne Title)
+        }
       }
     }
   }
@@ -413,13 +431,13 @@ lv_obj_t* render_key_tile(lv_obj_t* parent, int col, int row, const Tile& tile, 
   // Title Label
   lv_obj_t* l = lv_label_create(btn);
   set_label_style(l, lv_color_white(), FONT_TITLE);
-  lv_label_set_text(l, tile.title.length() ? tile.title.c_str() : "Key");
+  lv_label_set_text(l, has_title ? tile.title.c_str() : "Key");
 
-  // Position abhängig von Icon: mit Icon unten, ohne Icon zentriert
-  if (icon_lbl) {
-    lv_obj_align(l, LV_ALIGN_CENTER, 0, 35);  // Text unten unter Icon
+  // Flexible Positionierung: Icon + Title = 2 Zeilen mittig, nur Title = 1 Zeile mittig
+  if (icon_lbl && has_title) {
+    lv_obj_align(l, LV_ALIGN_CENTER, 0, 35);  // Title unten (mit Icon)
   } else {
-    lv_obj_center(l);  // Text zentriert (wie bisher)
+    lv_obj_center(l);  // Title mittig (ohne Icon oder als Fallback)
   }
 
   // Event-Handler für WebSocket Broadcast

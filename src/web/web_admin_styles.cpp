@@ -94,7 +94,7 @@ void appendAdminStyles(String& html) {
     }
     .tile.sensor { display:grid; grid-template-rows:auto 1fr; grid-template-columns:1fr; }
     .tile.scene,
-    .tile.key { display:flex; align-items:center; justify-content:center; }
+    .tile.key { display:flex; flex-direction:column; align-items:center; justify-content:center; }
     .tile.active {
       border:3px solid #4A9EFF;
       box-shadow:0 0 12px rgba(74,158,255,0.6);
@@ -166,12 +166,14 @@ void appendAdminStyles(String& html) {
     .tile.sensor .tile-title.with-icon {
       margin-left:32px;
     }
-    /* Scene/Key: Icon oben-mittig */
+    /* Scene/Key: Icon oben-mittig (flexbox zentriert automatisch) */
     .tile.scene .tile-icon,
     .tile.key .tile-icon {
-      display:block;
-      text-align:center;
-      margin-bottom:8px;
+      margin-bottom:4px;
+    }
+    .tile.scene .tile-title,
+    .tile.key .tile-title {
+      margin-top:4px;
     }
 
     /* Settings Panel */
