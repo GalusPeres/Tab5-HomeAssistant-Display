@@ -10,8 +10,9 @@ void appendAdminScripts(String& html) {
     btns.forEach(btn => btn.classList.remove('active'));
     const target = document.getElementById(tabName);
     if (target) target.classList.add('active');
-    const evTarget = event && event.target ? event.target : null;
-    if (evTarget) evTarget.classList.add('active');
+    // Find and activate the button that switches to this tab
+    const activeBtn = Array.from(btns).find(btn => btn.getAttribute('onclick')?.includes("'" + tabName + "'"));
+    if (activeBtn) activeBtn.classList.add('active');
     try { localStorage.setItem('activeAdminTab', tabName); } catch (e) {}
   }
 
