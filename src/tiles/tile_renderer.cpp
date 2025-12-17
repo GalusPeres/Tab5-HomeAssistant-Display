@@ -283,7 +283,7 @@ lv_obj_t* render_sensor_tile(lv_obj_t* parent, int col, int row, const Tile& til
   }
   set_label_style(v, lv_color_white(), FONT_VALUE);
   lv_label_set_text(v, "--");
-  lv_obj_align(v, LV_ALIGN_CENTER, 0, 18);
+  lv_obj_align(v, LV_ALIGN_CENTER, 0, 28);  // Nach unten verschoben (war 18)
 
   // Speichern für spätere Updates
   SensorTileWidgets* target = (grid_type == GridType::TAB0) ? g_tab0_sensors : g_tab1_sensors;
