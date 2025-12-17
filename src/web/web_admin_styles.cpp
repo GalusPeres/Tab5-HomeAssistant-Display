@@ -136,7 +136,7 @@ void appendAdminStyles(String& html) {
       align-self:start;
     }
     .tile.sensor .tile-title {
-      text-align:right;
+      text-align:left;
       align-self:start;
       width:100%;
     }
@@ -162,11 +162,11 @@ void appendAdminStyles(String& html) {
       font-size:24px;
       line-height:1;
     }
-    /* Sensor: Icon linksbündig, Titel rechtsbündig */
+    /* Sensor: Icon rechtsbündig, Titel linksbündig */
     .tile.sensor .tile-icon {
       position:absolute;
       top:10px;
-      left:8px;
+      right:8px;
     }
     /* Scene/Key: Icon oben-mittig (flexbox zentriert automatisch) */
     .tile.scene .tile-icon,

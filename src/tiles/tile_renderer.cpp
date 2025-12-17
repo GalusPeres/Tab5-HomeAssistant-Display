@@ -248,30 +248,26 @@ lv_obj_t* render_sensor_tile(lv_obj_t* parent, int col, int row, const Tile& til
       LV_GRID_ALIGN_STRETCH, col, 1,
       LV_GRID_ALIGN_STRETCH, row, 1);
 
-  // Icon Label (optional, falls icon_name vorhanden)
-  lv_obj_t* icon_lbl = nullptr;
-  int title_x_offset = 0;
-
+  // Icon Label (optional, falls icon_name vorhanden) - rechtsbündig
   if (tile.icon_name.length() > 0 && FONT_MDI_ICONS != nullptr) {
     String iconChar = getMdiChar(tile.icon_name);
     if (iconChar.length() > 0) {
-      icon_lbl = lv_label_create(card);
+      lv_obj_t* icon_lbl = lv_label_create(card);
       if (icon_lbl) {
         set_label_style(icon_lbl, lv_color_white(), FONT_MDI_ICONS);
         lv_label_set_text(icon_lbl, iconChar.c_str());
-        lv_obj_align(icon_lbl, LV_ALIGN_TOP_LEFT, -4, -8);  // 4px links, 4px hoch
-        title_x_offset = 52;  // 48px Icon + 4px Abstand (war 56)
+        lv_obj_align(icon_lbl, LV_ALIGN_TOP_RIGHT, 4, -8);  // Rechtsbündig (4px rechts, 8px hoch)
       }
     }
   }
 
-  // Title Label (nur anzeigen wenn Titel vorhanden) - rechtsbündig
+  // Title Label (nur anzeigen wenn Titel vorhanden) - linksbündig
   if (tile.title.length() > 0) {
     lv_obj_t* t = lv_label_create(card);
     if (t) {
       set_label_style(t, lv_color_hex(0xFFFFFF), FONT_TITLE);
       lv_label_set_text(t, tile.title.c_str());
-      lv_obj_align(t, LV_ALIGN_TOP_RIGHT, 0, 4);  // Rechtsbündig
+      lv_obj_align(t, LV_ALIGN_TOP_LEFT, 0, 4);  // Linksbündig
     }
   }
 
