@@ -181,6 +181,14 @@ static void appendTileTabHTML(
   html += tab_id;
   html += R"html(_tile_title" placeholder="Kachel-Titel">
 
+            <label>Icon (MDI)</label>
+            <input type="text" id=")html";
+  html += tab_id;
+  html += R"html(_tile_icon" placeholder="z.B. home, thermometer, lightbulb">
+            <div style="font-size:11px;color:#64748b;margin-top:4px;">
+              Material Design Icons: <a href="https://pictogrammers.com/library/mdi/" target="_blank" style="color:#3b82f6;">Icon-Liste anzeigen</a>
+            </div>
+
             <label>Farbe</label>
             <input type="color" id=")html";
   html += tab_id;

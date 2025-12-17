@@ -15,6 +15,7 @@ enum TileType : uint8_t {
 struct Tile {
   TileType type;
   String title;              // Für alle Typen
+  String icon_name;          // MDI Icon Name (z.B. "home", "thermometer")
   uint32_t bg_color;         // Hintergrundfarbe (0 = Standard)
 
   // Sensor-spezifisch

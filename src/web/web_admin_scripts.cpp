@@ -83,6 +83,7 @@ void appendAdminScripts(String& html) {
     const d = {
       type: document.getElementById(prefix + '_tile_type')?.value || '0',
       title: document.getElementById(prefix + '_tile_title')?.value || '',
+      icon: document.getElementById(prefix + '_tile_icon')?.value || '',
       color: document.getElementById(prefix + '_tile_color')?.value || '#2A2A2A',
       sensor_entity: document.getElementById(prefix + '_sensor_entity')?.value || '',
       sensor_unit: document.getElementById(prefix + '_sensor_unit')?.value || '',
@@ -101,6 +102,7 @@ void appendAdminScripts(String& html) {
     document.getElementById(prefix + '_tile_type').value = d.type || '0';
     updateTileType(tab);
     document.getElementById(prefix + '_tile_title').value = d.title || '';
+    document.getElementById(prefix + '_tile_icon').value = d.icon || '';
     document.getElementById(prefix + '_tile_color').value = d.color || '#2A2A2A';
     if (d.type === '1') {
       document.getElementById(prefix + '_sensor_entity').value = d.sensor_entity || '';
@@ -290,6 +292,7 @@ void appendAdminScripts(String& html) {
         document.getElementById(prefix + '_tile_type').value = data.type || 0;
         updateTileType(tab);
         document.getElementById(prefix + '_tile_title').value = data.title || '';
+        document.getElementById(prefix + '_tile_icon').value = data.icon_name || '';
         document.getElementById(prefix + '_tile_color').value = rgbToHex(data.bg_color || 0x2A2A2A);
         if (data.type === 1) {
           document.getElementById(prefix + '_sensor_entity').value = data.sensor_entity || '';
@@ -344,6 +347,7 @@ void appendAdminScripts(String& html) {
     const prefix = tab;
     document.getElementById(prefix + '_tile_type').value = '0';
     document.getElementById(prefix + '_tile_title').value = '';
+    document.getElementById(prefix + '_tile_icon').value = '';
     document.getElementById(prefix + '_tile_color').value = '#2A2A2A';
     ['_sensor_entity','_sensor_unit','_sensor_decimals','_scene_alias','_key_macro'].forEach(suf => {
       const el = document.getElementById(prefix + suf);
@@ -363,6 +367,7 @@ void appendAdminScripts(String& html) {
     formData.append('index', currentTileIndex);
     formData.append('type', document.getElementById(prefix + '_tile_type').value);
     formData.append('title', document.getElementById(prefix + '_tile_title').value);
+    formData.append('icon_name', document.getElementById(prefix + '_tile_icon').value);
     formData.append('bg_color', hexToRgb(document.getElementById(prefix + '_tile_color').value));
     const typeValue = document.getElementById(prefix + '_tile_type').value;
     if (typeValue === '1') {

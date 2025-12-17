@@ -313,6 +313,8 @@ void WebAdminServer::handleGetTiles() {
     json += "\"type\":" + String((int)tile.type) + ",";
     json += "\"title\":\"";
     json += tile.title;
+    json += "\",\"icon_name\":\"";
+    json += tile.icon_name;
     json += "\",\"bg_color\":" + String(tile.bg_color) + ",";
     json += "\"sensor_entity\":\"";
     json += tile.sensor_entity;
@@ -342,6 +344,8 @@ void WebAdminServer::handleGetTiles() {
     json += "\"type\":" + String((int)tile.type) + ",";
     json += "\"title\":\"";
     json += tile.title;
+    json += "\",\"icon_name\":\"";
+    json += tile.icon_name;
     json += "\",\"bg_color\":" + String(tile.bg_color) + ",";
     json += "\"sensor_entity\":\"";
     json += tile.sensor_entity;
@@ -385,6 +389,7 @@ void WebAdminServer::handleSaveTiles() {
   // Update tile data
   tile.type = static_cast<TileType>(type);
   tile.title = server.hasArg("title") ? server.arg("title") : "";
+  tile.icon_name = server.hasArg("icon_name") ? server.arg("icon_name") : "";
 
   // Parse color
   if (server.hasArg("bg_color")) {
