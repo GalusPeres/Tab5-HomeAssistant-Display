@@ -265,15 +265,15 @@ lv_obj_t* render_sensor_tile(lv_obj_t* parent, int col, int row, const Tile& til
     }
   }
 
-  // Title Label
-  lv_obj_t* t = lv_label_create(card);
-  if (!t) {
-    Serial.println("[TileRenderer] ERROR: Konnte Title-Label nicht erstellen");
-    return card;
+  // Title Label (nur anzeigen wenn Titel vorhanden)
+  if (tile.title.length() > 0) {
+    lv_obj_t* t = lv_label_create(card);
+    if (t) {
+      set_label_style(t, lv_color_hex(0xFFFFFF), FONT_TITLE);
+      lv_label_set_text(t, tile.title.c_str());
+      lv_obj_align(t, LV_ALIGN_TOP_LEFT, title_x_offset, 4);
+    }
   }
-  set_label_style(t, lv_color_hex(0xFFFFFF), FONT_TITLE);
-  lv_label_set_text(t, tile.title.length() ? tile.title.c_str() : "Sensor");
-  lv_obj_align(t, LV_ALIGN_TOP_LEFT, title_x_offset, 4);  // Y-mittig zum Icon
 
   // Value Label (Wert + Einheit kombiniert)
   lv_obj_t* v = lv_label_create(card);
@@ -343,16 +343,20 @@ lv_obj_t* render_scene_tile(lv_obj_t* parent, int col, int row, const Tile& tile
     }
   }
 
-  // Title Label
-  lv_obj_t* l = lv_label_create(btn);
-  set_label_style(l, lv_color_white(), FONT_TITLE);
-  lv_label_set_text(l, has_title ? tile.title.c_str() : "Szene");
+  // Title Label (nur anzeigen wenn Titel vorhanden)
+  if (has_title) {
+    lv_obj_t* l = lv_label_create(btn);
+    if (l) {
+      set_label_style(l, lv_color_white(), FONT_TITLE);
+      lv_label_set_text(l, tile.title.c_str());
 
-  // Flexible Positionierung: Icon + Title = 2 Zeilen mittig, nur Title = 1 Zeile mittig
-  if (icon_lbl && has_title) {
-    lv_obj_align(l, LV_ALIGN_CENTER, 0, 35);  // Title unten (mit Icon)
-  } else {
-    lv_obj_center(l);  // Title mittig (ohne Icon oder als Fallback)
+      // Flexible Positionierung: mit Icon unten, ohne Icon mittig
+      if (icon_lbl) {
+        lv_obj_align(l, LV_ALIGN_CENTER, 0, 35);  // Title unten (mit Icon)
+      } else {
+        lv_obj_center(l);  // Title mittig (ohne Icon)
+      }
+    }
   }
 
   // Event-Handler für Scene-Aktivierung
@@ -428,16 +432,20 @@ lv_obj_t* render_key_tile(lv_obj_t* parent, int col, int row, const Tile& tile, 
     }
   }
 
-  // Title Label
-  lv_obj_t* l = lv_label_create(btn);
-  set_label_style(l, lv_color_white(), FONT_TITLE);
-  lv_label_set_text(l, has_title ? tile.title.c_str() : "Key");
+  // Title Label (nur anzeigen wenn Titel vorhanden)
+  if (has_title) {
+    lv_obj_t* l = lv_label_create(btn);
+    if (l) {
+      set_label_style(l, lv_color_white(), FONT_TITLE);
+      lv_label_set_text(l, tile.title.c_str());
 
-  // Flexible Positionierung: Icon + Title = 2 Zeilen mittig, nur Title = 1 Zeile mittig
-  if (icon_lbl && has_title) {
-    lv_obj_align(l, LV_ALIGN_CENTER, 0, 35);  // Title unten (mit Icon)
-  } else {
-    lv_obj_center(l);  // Title mittig (ohne Icon oder als Fallback)
+      // Flexible Positionierung: mit Icon unten, ohne Icon mittig
+      if (icon_lbl) {
+        lv_obj_align(l, LV_ALIGN_CENTER, 0, 35);  // Title unten (mit Icon)
+      } else {
+        lv_obj_center(l);  // Title mittig (ohne Icon)
+      }
+    }
   }
 
   // Event-Handler für WebSocket Broadcast

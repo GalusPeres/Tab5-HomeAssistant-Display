@@ -272,13 +272,14 @@ void appendAdminScripts(String& html) {
       html += '<i class="mdi mdi-' + iconName + ' tile-icon"></i>';
     }
 
-    // Title
-    let titleText = title || (type === '1' ? 'Sensor' : type === '2' ? 'Szene' : 'Key');
-    html += '<div class="tile-title';
-    if (iconName && type === '1') {
-      html += ' with-icon';
+    // Title (nur wenn vorhanden)
+    if (title) {
+      html += '<div class="tile-title';
+      if (iconName && type === '1') {
+        html += ' with-icon';
+      }
+      html += '" id="' + tileId + '-title">' + title + '</div>';
     }
-    html += '" id="' + tileId + '-title">' + titleText + '</div>';
 
     if (type === '1') {
       const entitySelect = document.getElementById(prefix + '_sensor_entity');
@@ -441,13 +442,14 @@ void appendAdminScripts(String& html) {
         html += '<i class="mdi mdi-' + iconName + ' tile-icon"></i>';
       }
 
-      // Title
-      let title = tile.title && tile.title.length ? tile.title : (tile.type === 1 ? 'Sensor' : tile.type === 2 ? 'Szene' : 'Key');
-      html += '<div class="tile-title';
-      if (iconName && tile.type === 1) {
-        html += ' with-icon';
+      // Title (nur wenn vorhanden)
+      if (tile.title && tile.title.length) {
+        html += '<div class="tile-title';
+        if (iconName && tile.type === 1) {
+          html += ' with-icon';
+        }
+        html += '" id="' + tab + '-tile-' + index + '-title">' + tile.title + '</div>';
       }
-      html += '" id="' + tab + '-tile-' + index + '-title">' + title + '</div>';
 
       // Sensor value
       if (tile.type === 1) {

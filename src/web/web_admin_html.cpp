@@ -123,25 +123,20 @@ static void appendTileTabHTML(
         html += " tile-icon\"></i>";
       }
 
-      html += "<div class=\"tile-title";
-      if (hasIcon && tile.type == TILE_SENSOR) {
-        html += " with-icon";
-      }
-      html += "\" id=\"";
-      html += tab_id;
-      html += "-tile-";
-      html += String(i);
-      html += "-title\">";
+      // Title nur anzeigen wenn vorhanden
       if (tile.title.length()) {
+        html += "<div class=\"tile-title";
+        if (hasIcon && tile.type == TILE_SENSOR) {
+          html += " with-icon";
+        }
+        html += "\" id=\"";
+        html += tab_id;
+        html += "-tile-";
+        html += String(i);
+        html += "-title\">";
         appendHtmlEscaped(html, tile.title);
-      } else if (tile.type == TILE_SENSOR) {
-        html += "Sensor";
-      } else if (tile.type == TILE_SCENE) {
-        html += "Szene";
-      } else if (tile.type == TILE_KEY) {
-        html += "Key";
+        html += "</div>";
       }
-      html += "</div>";
     }
 
     if (tile.type == TILE_SENSOR) {
