@@ -16,7 +16,22 @@ void appendAdminStyles(String& html) {
 
     /* Tab Navigation */
     .tab-nav { display:flex; gap:8px; margin-bottom:24px; border-bottom:2px solid #e2e8f0; }
-    .tab-btn { padding:12px 24px; border:none; background:transparent; color:#64748b; font-size:15px; font-weight:600; cursor:pointer; border-bottom:3px solid transparent; transition:all 0.3s; }
+    .tab-btn {
+      padding:12px 20px;
+      border:none;
+      background:transparent;
+      color:#64748b;
+      font-size:15px;
+      font-weight:600;
+      cursor:pointer;
+      border-bottom:3px solid transparent;
+      transition:all 0.3s;
+      display:flex;
+      flex-direction:row;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+    }
     .tab-btn:hover { color:#4f46e5; background:#f8fafc; }
     .tab-btn.active { color:#4f46e5; border-bottom-color:#4f46e5; }
     .edit-icon { font-size:12px; margin-left:6px; opacity:0.5; cursor:pointer; transition:opacity 0.2s; }

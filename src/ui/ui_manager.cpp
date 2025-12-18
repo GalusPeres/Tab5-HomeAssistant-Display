@@ -2,6 +2,8 @@
 
 #include "src/ui/tab_tiles_unified.h"
 #include "src/ui/tab_settings.h"
+#include "src/tiles/mdi_icons.h"
+#include "src/tiles/tile_config.h"
 #include "font_roboto_mono_digits_48.h"
 #include "font_roboto_mono_digits_24.h"
 #include <WiFi.h>
@@ -78,17 +80,20 @@ void UIManager::buildUI(scene_publish_cb_t scene_cb, hotspot_start_cb_t hotspot_
   lv_obj_set_flex_grow(nav_container, 1);
   lv_obj_clear_flag(nav_container, LV_OBJ_FLAG_SCROLLABLE);
 
-  const char *tab_icons[TAB_COUNT] = {
-    LV_SYMBOL_HOME,
-    LV_SYMBOL_KEYBOARD,  // Game Controls (USB HID Macro Pad)
-    LV_SYMBOL_DOWNLOAD,
-    LV_SYMBOL_SETTINGS
-  };
-
+  // Tab-Konfiguration aus tileConfig holen
   for (uint8_t i = 0; i < TAB_COUNT; ++i) {
-    // Echte LVGL Buttons für Standard-Animation (größer werden beim Drücken)
     lv_obj_t *btn = lv_button_create(nav_container);
-    tab_labels[i] = configureNavButton(btn, tab_icons[i]);
+
+    if (i < 3) {
+      // Tabs 0, 1, 2: Icon + Name aus tileConfig
+      const char* tabName = tileConfig.getTabName(i);
+      const char* iconName = tileConfig.getTabIcon(i);
+      tab_labels[i] = setupTabButton(btn, i, iconName, tabName);
+    } else {
+      // Tab 3: Settings (fixiert)
+      tab_labels[i] = setupTabButton(btn, i, nullptr, "Settings");
+    }
+
     lv_obj_set_flex_grow(btn, 1);
     lv_obj_add_event_cb(btn, nav_button_event_cb, LV_EVENT_CLICKED, this);
     tab_buttons[i] = btn;
@@ -206,15 +211,12 @@ void UIManager::statusbarInit(lv_obj_t *tab_bar) {
   lv_label_set_text(status_date_label, "00.00.0000");
 }
 
-lv_obj_t* UIManager::configureNavButton(lv_obj_t *btn, const char *icon_text) {
+lv_obj_t* UIManager::setupTabButton(lv_obj_t *btn, uint8_t tab_index, const char *icon_name, const char *tab_name) {
   if (!btn) return nullptr;
 
-  // NICHT remove_style_all() verwenden - das entfernt die Button-Animationen!
-  // Stattdessen nur die gewünschten Styles überschreiben
+  // Button Styling (Normal State: Transparent)
   lv_obj_set_width(btn, LV_PCT(100));
   lv_obj_set_height(btn, 100);
-
-  // Normal State: Transparent
   lv_obj_set_style_bg_color(btn, lv_color_hex(0xE38422), 0);
   lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(btn, 0, 0);
@@ -222,33 +224,62 @@ lv_obj_t* UIManager::configureNavButton(lv_obj_t *btn, const char *icon_text) {
   lv_obj_set_style_outline_width(btn, 0, 0);
 
   // PRESSED State: Helle Orange Farbe beim Drücken
-  lv_obj_set_style_bg_opa(btn, LV_OPA_30, LV_STATE_PRESSED);  // 30% Deckkraft
+  lv_obj_set_style_bg_opa(btn, LV_OPA_30, LV_STATE_PRESSED);
   lv_obj_set_style_bg_color(btn, lv_color_hex(0xE38422), LV_STATE_PRESSED);
 
-  // Animation komplett deaktivieren
+  // Animation deaktivieren
   lv_obj_set_style_transform_width(btn, 0, LV_STATE_PRESSED);
   lv_obj_set_style_transform_height(btn, 0, LV_STATE_PRESSED);
 
   lv_obj_set_style_radius(btn, 24, 0);
-  lv_obj_set_style_pad_top(btn, 24, 0);
-  lv_obj_set_style_pad_bottom(btn, 24, 0);
-  lv_obj_set_style_pad_left(btn, 8, 0);
-  lv_obj_set_style_pad_right(btn, 8, 0);
+  lv_obj_set_style_pad_all(btn, 8, 0);
   lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_add_flag(btn, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLL_CHAIN_HOR);
-  lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
 
-  lv_obj_t *label = lv_label_create(btn);
-  lv_label_set_text(label, icon_text ? icon_text : "");
-  lv_obj_set_style_text_color(label, lv_color_white(), 0);
-#if defined(LV_FONT_MONTSERRAT_48) && LV_FONT_MONTSERRAT_48
-  lv_obj_set_style_text_font(label, &lv_font_montserrat_48, 0);
-#elif defined(LV_FONT_MONTSERRAT_32) && LV_FONT_MONTSERRAT_32
-  lv_obj_set_style_text_font(label, &lv_font_montserrat_32, 0);
-#endif
-  lv_obj_center(label);
-  return label;
+  // Flexbox column Layout: Icon oben, Text unten
+  lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_gap(btn, 12, 0);  // Größerer Abstand wie bei Scene-Kacheln
+
+  lv_obj_t *icon_label = nullptr;
+  lv_obj_t *text_label = nullptr;
+
+  bool has_icon = (icon_name && strlen(icon_name) > 0);
+  bool has_name = (tab_name && strlen(tab_name) > 0);
+
+  // Icon (wenn gesetzt)
+  if (has_icon) {
+    String iconChar = getMdiChar(String(icon_name));
+    if (iconChar.length() > 0 && FONT_MDI_ICONS != nullptr) {
+      icon_label = lv_label_create(btn);
+      lv_label_set_text(icon_label, iconChar.c_str());
+      lv_obj_set_style_text_color(icon_label, lv_color_white(), 0);
+      lv_obj_set_style_text_font(icon_label, FONT_MDI_ICONS, 0);
+    }
+  }
+
+  // Name oder Fallback-Nummer
+  if (has_name) {
+    text_label = lv_label_create(btn);
+    lv_label_set_text(text_label, tab_name);
+    lv_obj_set_style_text_color(text_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(text_label, &lv_font_montserrat_24, 0);
+    lv_label_set_long_mode(text_label, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(text_label, LV_PCT(90));
+    lv_obj_set_style_text_align(text_label, LV_TEXT_ALIGN_CENTER, 0);
+  } else if (!has_icon && tab_index < 3) {
+    // Fallback: Wenn beides leer, zeige Nummer "1", "2", "3"
+    text_label = lv_label_create(btn);
+    char fallback[2];
+    snprintf(fallback, sizeof(fallback), "%d", tab_index + 1);
+    lv_label_set_text(text_label, fallback);
+    lv_obj_set_style_text_color(text_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(text_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_align(text_label, LV_TEXT_ALIGN_CENTER, 0);
+  }
+
+  // Return text label (for potential later updates)
+  return text_label;
 }
 
 lv_obj_t* UIManager::createTabPanel(lv_obj_t *parent) {
@@ -440,6 +471,71 @@ void UIManager::serviceNtpSync() {
 
   next_ntp_sync_ms = now_ms + 3600000UL; // Stündlich neu syncen
 
+}
+
+// ========== Tab-Button Live-Update ==========
+void UIManager::refreshTabButton(uint8_t tab_index) {
+  // Nur Tabs 0-2 sind konfigurierbar (Tab 3 = Settings ist fixiert)
+  if (tab_index >= 3) return;
+  if (!tab_buttons[tab_index]) return;
+
+  lv_obj_t *btn = tab_buttons[tab_index];
+
+  // Alle Children löschen (Icon + Text Label)
+  lv_obj_clean(btn);
+
+  // Flexbox column Layout wiederherstellen (wird durch clean gelöscht)
+  lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_gap(btn, 12, 0);  // Größerer Abstand wie bei Scene-Kacheln
+
+  // Neue Werte aus tileConfig holen
+  const char* tabName = tileConfig.getTabName(tab_index);
+  const char* iconName = tileConfig.getTabIcon(tab_index);
+
+  bool has_icon = (iconName && strlen(iconName) > 0);
+  bool has_name = (tabName && strlen(tabName) > 0);
+
+  // Icon (wenn gesetzt)
+  if (has_icon) {
+    String iconChar = getMdiChar(String(iconName));
+    if (iconChar.length() > 0 && FONT_MDI_ICONS != nullptr) {
+      lv_obj_t *icon_label = lv_label_create(btn);
+      lv_label_set_text(icon_label, iconChar.c_str());
+      lv_obj_set_style_text_color(icon_label, lv_color_white(), 0);
+      lv_obj_set_style_text_font(icon_label, FONT_MDI_ICONS, 0);
+    }
+  }
+
+  // Name oder Fallback-Nummer
+  if (has_name) {
+    lv_obj_t *text_label = lv_label_create(btn);
+    lv_label_set_text(text_label, tabName);
+    lv_obj_set_style_text_color(text_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(text_label, &lv_font_montserrat_24, 0);
+    lv_label_set_long_mode(text_label, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(text_label, LV_PCT(90));
+    lv_obj_set_style_text_align(text_label, LV_TEXT_ALIGN_CENTER, 0);
+
+    // Update tab_labels array für potenzielle spätere Verwendung
+    tab_labels[tab_index] = text_label;
+  } else if (!has_icon && tab_index < 3) {
+    // Fallback: Wenn beides leer, zeige Nummer "1", "2", "3"
+    lv_obj_t *text_label = lv_label_create(btn);
+    char fallback[2];
+    snprintf(fallback, sizeof(fallback), "%d", tab_index + 1);
+    lv_label_set_text(text_label, fallback);
+    lv_obj_set_style_text_color(text_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(text_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_align(text_label, LV_TEXT_ALIGN_CENTER, 0);
+
+    tab_labels[tab_index] = text_label;
+  }
+
+  // Display neu zeichnen (wichtig für sofortiges Update!)
+  lv_obj_invalidate(btn);
+
+  Serial.printf("[UI] Tab-Button %u aktualisiert: %s (icon: %s)\n", tab_index, tabName, iconName);
 }
 
 

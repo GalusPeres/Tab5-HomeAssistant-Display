@@ -21,6 +21,9 @@ public:
   void scheduleNtpSync(uint32_t delay_ms = 0);
   void serviceNtpSync();
 
+  // Tab-Button Live-Update
+  void refreshTabButton(uint8_t tab_index);
+
 private:
   static constexpr uint8_t TAB_COUNT = 4;
 
@@ -46,7 +49,7 @@ private:
   // Interne Funktionen
   void statusbarInit(lv_obj_t *tab_bar);
   void switchToTab(uint8_t index);
-  lv_obj_t* configureNavButton(lv_obj_t *btn, const char *icon_text);
+  lv_obj_t* setupTabButton(lv_obj_t *btn, uint8_t tab_index, const char *icon_name, const char *tab_name);
   lv_obj_t* createTabPanel(lv_obj_t *parent);
   static void nav_button_event_cb(lv_event_t *e);
 };

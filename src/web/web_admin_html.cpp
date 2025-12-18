@@ -39,11 +39,17 @@ static void appendTileTabHTML(
           <label style="font-size:13px;font-weight:600;color:#475569;display:block;margin-bottom:6px;">Tab-Name</label>
           <input type="text" id=")html";
   html += tab_id;
-  html += R"html(_tab_name" placeholder=")html";
-  html += tab_label;
-  html += R"html(" value=")html";
+  html += R"html(_tab_name" placeholder="Leer = Nummer, z.B. Home" value=")html";
   html += tileConfig.getTabName(tab_index);
-  html += R"html(" onchange="saveTabName()html";
+  html += R"html(" oninput="debouncedSaveTabName()html";
+  html += String(tab_index);
+  html += R"html(, this.value)" style="width:100%;max-width:300px;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px;">
+          <label style="font-size:13px;font-weight:600;color:#475569;display:block;margin-bottom:6px;">Tab-Icon</label>
+          <input type="text" id=")html";
+  html += tab_id;
+  html += R"html(_tab_icon" placeholder="Leer = kein Icon, z.B. home" value=")html";
+  html += tileConfig.getTabIcon(tab_index);
+  html += R"html(" oninput="debouncedSaveTabIcon()html";
   html += String(tab_index);
   html += R"html(, this.value)" style="width:100%;max-width:300px;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;box-sizing:border-box;">
         </div>
@@ -331,19 +337,88 @@ String WebAdminServer::getAdminPage() {
       <!-- Tab Navigation -->
       <div class="tab-nav">
         <button class="tab-btn" onclick="switchTab('tab-network')">Network</button>
-        <button class="tab-btn" onclick="switchTab('tab-tiles-tab0')">
-          <span id="tab-name-0">)html";
-  html += tileConfig.getTabName(0);
+        <button class="tab-btn" onclick="switchTab('tab-tiles-tab0')">)html";
+
+  // Tab 0 - Icon + Name (oder Fallback "1")
+  String icon0 = String(tileConfig.getTabIcon(0));
+  String name0 = String(tileConfig.getTabName(0));
+  bool has_icon0 = (icon0.length() > 0);
+  bool has_name0 = (name0.length() > 0);
+
+  if (has_icon0) {
+    icon0.trim();
+    icon0.toLowerCase();
+    if (icon0.startsWith("mdi:")) icon0 = icon0.substring(4);
+    else if (icon0.startsWith("mdi-")) icon0 = icon0.substring(4);
+
+    html += R"html(
+          <i class="mdi mdi-)html";
+    html += icon0;
+    html += R"html(" style="font-size:24px;"></i>)html";
+  }
+  html += R"html(
+          <span id="tab-name-0" style="font-size:14px;font-weight:600;">)html";
+  if (has_name0) {
+    html += name0;
+  } else if (!has_icon0) {
+    html += "1";  // Fallback
+  }
   html += R"html(</span>
         </button>
-        <button class="tab-btn" onclick="switchTab('tab-tiles-tab1')">
-          <span id="tab-name-1">)html";
-  html += tileConfig.getTabName(1);
+        <button class="tab-btn" onclick="switchTab('tab-tiles-tab1')">)html";
+
+  // Tab 1 - Icon + Name (oder Fallback "2")
+  String icon1 = String(tileConfig.getTabIcon(1));
+  String name1 = String(tileConfig.getTabName(1));
+  bool has_icon1 = (icon1.length() > 0);
+  bool has_name1 = (name1.length() > 0);
+
+  if (has_icon1) {
+    icon1.trim();
+    icon1.toLowerCase();
+    if (icon1.startsWith("mdi:")) icon1 = icon1.substring(4);
+    else if (icon1.startsWith("mdi-")) icon1 = icon1.substring(4);
+
+    html += R"html(
+          <i class="mdi mdi-)html";
+    html += icon1;
+    html += R"html(" style="font-size:24px;"></i>)html";
+  }
+  html += R"html(
+          <span id="tab-name-1" style="font-size:14px;font-weight:600;">)html";
+  if (has_name1) {
+    html += name1;
+  } else if (!has_icon1) {
+    html += "2";  // Fallback
+  }
   html += R"html(</span>
         </button>
-        <button class="tab-btn" onclick="switchTab('tab-tiles-tab2')">
-          <span id="tab-name-2">)html";
-  html += tileConfig.getTabName(2);
+        <button class="tab-btn" onclick="switchTab('tab-tiles-tab2')">)html";
+
+  // Tab 2 - Icon + Name (oder Fallback "3")
+  String icon2 = String(tileConfig.getTabIcon(2));
+  String name2 = String(tileConfig.getTabName(2));
+  bool has_icon2 = (icon2.length() > 0);
+  bool has_name2 = (name2.length() > 0);
+
+  if (has_icon2) {
+    icon2.trim();
+    icon2.toLowerCase();
+    if (icon2.startsWith("mdi:")) icon2 = icon2.substring(4);
+    else if (icon2.startsWith("mdi-")) icon2 = icon2.substring(4);
+
+    html += R"html(
+          <i class="mdi mdi-)html";
+    html += icon2;
+    html += R"html(" style="font-size:24px;"></i>)html";
+  }
+  html += R"html(
+          <span id="tab-name-2" style="font-size:14px;font-weight:600;">)html";
+  if (has_name2) {
+    html += name2;
+  } else if (!has_icon2) {
+    html += "3";  // Fallback
+  }
   html += R"html(</span>
         </button>
       </div>

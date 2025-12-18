@@ -325,16 +325,10 @@ bool TileConfig::saveGrid(const char* prefix, const TileGridConfig& grid) {
 // ========== Tab Names (configurable via web interface) ==========
 
 const char* TileConfig::getTabName(uint8_t tab_index) const {
-  if (tab_index >= 3) return "Tab";
+  if (tab_index >= 3) return "";
 
-  // Return custom name if set
-  if (tab_configs[tab_index].name[0] != '\0') {
-    return tab_configs[tab_index].name;
-  }
-
-  // Default names
-  static const char* defaults[3] = {"Tab 1", "Tab 2", "Tab 3"};
-  return defaults[tab_index];
+  // Return custom name (kann auch leer sein)
+  return tab_configs[tab_index].name;
 }
 
 void TileConfig::setTabName(uint8_t tab_index, const char* name) {
@@ -349,6 +343,23 @@ void TileConfig::setTabName(uint8_t tab_index, const char* name) {
   tab_configs[tab_index].name[len] = '\0';
 }
 
+const char* TileConfig::getTabIcon(uint8_t tab_index) const {
+  if (tab_index >= 3) return "";
+  return tab_configs[tab_index].icon_name;
+}
+
+void TileConfig::setTabIcon(uint8_t tab_index, const char* icon_name) {
+  if (tab_index >= 3 || !icon_name) return;
+
+  size_t len = strlen(icon_name);
+  if (len >= sizeof(tab_configs[0].icon_name)) {
+    len = sizeof(tab_configs[0].icon_name) - 1;
+  }
+
+  memcpy(tab_configs[tab_index].icon_name, icon_name, len);
+  tab_configs[tab_index].icon_name[len] = '\0';
+}
+
 bool TileConfig::loadTabNames() {
   Preferences prefs;
   if (!prefs.begin("tab5_config", true)) {  // Read-only
@@ -357,16 +368,24 @@ bool TileConfig::loadTabNames() {
 
   for (uint8_t i = 0; i < 3; i++) {
     char key[16];
-    snprintf(key, sizeof(key), "tab_name_%u", i);
 
+    // Load tab name
+    snprintf(key, sizeof(key), "tab_name_%u", i);
     String name = prefs.getString(key, "");
     if (name.length() > 0) {
       setTabName(i, name.c_str());
     }
+
+    // Load tab icon
+    snprintf(key, sizeof(key), "tab_icon_%u", i);
+    String icon = prefs.getString(key, "");
+    if (icon.length() > 0) {
+      setTabIcon(i, icon.c_str());
+    }
   }
 
   prefs.end();
-  Serial.println("[TileConfig] Tab-Namen geladen");
+  Serial.println("[TileConfig] Tab-Namen und Icons geladen");
   return true;
 }
 
@@ -378,16 +397,25 @@ bool TileConfig::saveTabNames() {
 
   for (uint8_t i = 0; i < 3; i++) {
     char key[16];
-    snprintf(key, sizeof(key), "tab_name_%u", i);
 
+    // Save tab name
+    snprintf(key, sizeof(key), "tab_name_%u", i);
     if (tab_configs[i].name[0] != '\0') {
       prefs.putString(key, tab_configs[i].name);
     } else {
       prefs.remove(key);  // Remove if empty (use default)
     }
+
+    // Save tab icon
+    snprintf(key, sizeof(key), "tab_icon_%u", i);
+    if (tab_configs[i].icon_name[0] != '\0') {
+      prefs.putString(key, tab_configs[i].icon_name);
+    } else {
+      prefs.remove(key);  // Remove if empty (no icon)
+    }
   }
 
   prefs.end();
-  Serial.println("[TileConfig] Tab-Namen gespeichert");
+  Serial.println("[TileConfig] Tab-Namen und Icons gespeichert");
   return true;
 }

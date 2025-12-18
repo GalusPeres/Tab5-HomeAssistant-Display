@@ -16,29 +16,147 @@ void appendAdminScripts(String& html) {
     try { localStorage.setItem('activeAdminTab', tabName); } catch (e) {}
   }
 
-  function saveTabName(tabIndex, newName) {
-    if (!newName || newName.trim().length === 0) return;
-    const trimmedName = newName.trim();
+  // Gespeicherte Tab-Daten (verhindert Überschreiben bei schnellem Tippen)
+  const savedTabData = {
+    0: {name: '', icon: ''},
+    1: {name: '', icon: ''},
+    2: {name: '', icon: ''}
+  };
+
+  // Initialisierung beim Laden der Seite
+  function initSavedTabData() {
+    console.log('[DEBUG] initSavedTabData() called');
+    for (let i = 0; i < 3; i++) {
+      const nameInput = document.getElementById('tab' + i + '_tab_name');
+      const iconInput = document.getElementById('tab' + i + '_tab_icon');
+      if (nameInput) savedTabData[i].name = nameInput.value.trim();
+      if (iconInput) savedTabData[i].icon = iconInput.value.trim();
+      console.log('[DEBUG] Tab ' + i + ' initialized: name="' + savedTabData[i].name + '", icon="' + savedTabData[i].icon + '"');
+    }
+  }
+
+  // Debounce Helper (500ms Verzögerung) - NUR EINER für beide Felder!
+  const tabSaveTimers = {};
+
+  function debouncedSaveTab(tabIndex) {
+    // Cache SOFORT aktualisieren aus Input-Feldern
+    const nameInput = document.getElementById('tab' + tabIndex + '_tab_name');
+    const iconInput = document.getElementById('tab' + tabIndex + '_tab_icon');
+
+    console.log('[DEBUG] debouncedSaveTab(' + tabIndex + '): nameInput found=' + (nameInput !== null) + ', value="' + (nameInput ? nameInput.value : 'NULL') + '"');
+    console.log('[DEBUG] debouncedSaveTab(' + tabIndex + '): iconInput found=' + (iconInput !== null) + ', value="' + (iconInput ? iconInput.value : 'NULL') + '"');
+
+    savedTabData[tabIndex].name = nameInput ? nameInput.value.trim() : '';
+    savedTabData[tabIndex].icon = iconInput ? iconInput.value.trim() : '';
+    console.log('[DEBUG] debouncedSaveTab(' + tabIndex + '): Cache updated to name="' + savedTabData[tabIndex].name + '", icon="' + savedTabData[tabIndex].icon + '"');
+
+    // Clear existing timer for this tab
+    if (tabSaveTimers[tabIndex]) {
+      clearTimeout(tabSaveTimers[tabIndex]);
+    }
+    // Set new timer - EINE Funktion für beide Felder!
+    tabSaveTimers[tabIndex] = setTimeout(() => {
+      saveTab(tabIndex);
+    }, 500);
+  }
+
+  // Diese Funktionen rufen die gemeinsame debounced Funktion auf
+  function debouncedSaveTabName(tabIndex, newName) {
+    debouncedSaveTab(tabIndex);
+  }
+
+  function debouncedSaveTabIcon(tabIndex, newIcon) {
+    debouncedSaveTab(tabIndex);
+  }
+
+  // EINE gemeinsame Save-Funktion für beide Felder (wie bei Tiles!)
+  function saveTab(tabIndex) {
+    const tabName = savedTabData[tabIndex].name;
+    const iconName = savedTabData[tabIndex].icon;
+    console.log('[DEBUG] saveTab(' + tabIndex + '): name="' + tabName + '", icon="' + iconName + '"');
 
     fetch('/api/tabs/rename', {
       method: 'POST',
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: 'tab=' + tabIndex + '&name=' + encodeURIComponent(trimmedName)
+      body: 'tab=' + tabIndex + '&name=' + encodeURIComponent(tabName) + '&icon_name=' + encodeURIComponent(iconName)
     })
     .then(r => r.json())
     .then(data => {
       if (data.success) {
-        document.getElementById('tab-name-' + tabIndex).textContent = trimmedName;
-        console.log('Tab ' + tabIndex + ' renamed to: ' + trimmedName);
+        updateTabButton(tabIndex, tabName, iconName);
+        console.log('Tab ' + tabIndex + ' saved: name="' + tabName + '", icon="' + iconName + '"');
       } else {
-        console.error('Error renaming tab:', data.error);
-        alert('Fehler beim Umbenennen: ' + (data.error || 'Unbekannt'));
+        console.error('Error updating tab:', data.error);
+        alert('Fehler beim Aktualisieren: ' + (data.error || 'Unbekannt'));
       }
     })
     .catch(e => {
-      console.error('Error renaming tab:', e);
-      alert('Fehler beim Umbenennen: ' + e);
+      console.error('Error updating tab:', e);
+      alert('Fehler beim Aktualisieren: ' + e);
     });
+  }
+
+  function updateTabButton(tabIndex, tabName, iconName) {
+    console.log('[DEBUG] updateTabButton(' + tabIndex + '): tabName="' + tabName + '", iconName="' + iconName + '"');
+
+    // Update tab button to show icon and name (beide optional)
+    const tabNameSpan = document.getElementById('tab-name-' + tabIndex);
+    let tabBtn;
+
+    if (tabNameSpan) {
+      tabBtn = tabNameSpan.parentElement;
+    } else {
+      // Fallback: Button direkt finden über Attribut-Selektor
+      const allBtns = document.querySelectorAll('.tab-btn');
+      if (allBtns[tabIndex]) {
+        tabBtn = allBtns[tabIndex];
+      }
+    }
+
+    if (!tabBtn) return;
+
+    // Normalize icon name
+    let normalizedIcon = (iconName || '').trim().toLowerCase();
+    if (normalizedIcon.startsWith('mdi:')) normalizedIcon = normalizedIcon.substring(4);
+    else if (normalizedIcon.startsWith('mdi-')) normalizedIcon = normalizedIcon.substring(4);
+
+    // Clear existing content
+    tabBtn.innerHTML = '';
+
+    const hasIcon = normalizedIcon && normalizedIcon.length > 0;
+    const hasName = tabName && tabName.trim().length > 0;
+    console.log('[DEBUG] updateTabButton(' + tabIndex + '): hasIcon=' + hasIcon + ', hasName=' + hasName + ', normalizedIcon="' + normalizedIcon + '"');
+
+    // Add icon if present
+    if (hasIcon) {
+      const iconEl = document.createElement('i');
+      iconEl.className = 'mdi mdi-' + normalizedIcon;
+      iconEl.style.cssText = 'font-size:24px;';
+      tabBtn.appendChild(iconEl);
+    }
+
+    // Add text, or fallback number if both empty
+    if (hasName) {
+      const textSpan = document.createElement('span');
+      textSpan.id = 'tab-name-' + tabIndex;
+      textSpan.textContent = tabName;
+      textSpan.style.cssText = 'font-size:14px;font-weight:600;';
+      tabBtn.appendChild(textSpan);
+    } else if (!hasIcon && tabIndex < 3) {
+      // Fallback: Wenn beides leer, zeige Nummer "1", "2", "3"
+      const textSpan = document.createElement('span');
+      textSpan.id = 'tab-name-' + tabIndex;
+      textSpan.textContent = String(tabIndex + 1);
+      textSpan.style.cssText = 'font-size:14px;font-weight:600;';
+      tabBtn.appendChild(textSpan);
+    } else {
+      // Leerer Span für ID (damit Button später gefunden werden kann)
+      const textSpan = document.createElement('span');
+      textSpan.id = 'tab-name-' + tabIndex;
+      textSpan.textContent = '';
+      textSpan.style.cssText = 'display:none;';
+      tabBtn.appendChild(textSpan);
+    }
   }
 
   // Tile Editor State
@@ -562,6 +680,10 @@ void appendAdminScripts(String& html) {
   function loadTileDataAndSelect(tab, index) { selectTile(index, tab); }
 
   document.addEventListener('DOMContentLoaded', () => {
+    // Verzögerte Initialisierung, damit Input-Felder vom Browser gefüllt werden
+    setTimeout(() => {
+      initSavedTabData();  // Tab-Daten initialisieren (verhindert Überschreiben)
+    }, 100);
     loadDraftsFromStorage();
     loadSensorValues();
     let savedTab = null;

@@ -6,6 +6,7 @@
 #include "src/game/game_controls_config.h"
 #include "src/tiles/tile_config.h"
 #include "src/ui/tab_tiles_unified.h"
+#include "src/ui/ui_manager.h"
 #include <algorithm>
 
 void WebAdminServer::handleSaveMQTT() {
@@ -565,16 +566,22 @@ void WebAdminServer::handleGetTabs() {
   String json = "{\"tabs\":[";
   json += "{\"id\":0,\"name\":\"";
   json += tileConfig.getTabName(0);
+  json += "\",\"icon_name\":\"";
+  json += tileConfig.getTabIcon(0);
   json += "\",\"type\":\"tab0\"},";
   json += "{\"id\":1,\"name\":\"";
   json += tileConfig.getTabName(1);
+  json += "\",\"icon_name\":\"";
+  json += tileConfig.getTabIcon(1);
   json += "\",\"type\":\"tab1\"},";
   json += "{\"id\":2,\"name\":\"";
   json += tileConfig.getTabName(2);
+  json += "\",\"icon_name\":\"";
+  json += tileConfig.getTabIcon(2);
   json += "\",\"type\":\"tab2\"}";
   json += "]}";
   server.send(200, "application/json", json);
-  Serial.println("[WebAdmin] Tab names sent");
+  Serial.println("[WebAdmin] Tab names and icons sent");
 }
 
 void WebAdminServer::handleRenameTab() {
@@ -585,6 +592,7 @@ void WebAdminServer::handleRenameTab() {
 
   String tab = server.arg("tab");
   String name = server.arg("name");
+  String icon_name = server.hasArg("icon_name") ? server.arg("icon_name") : "";
 
   uint8_t tab_index = 255;
   if (tab == "home" || tab == "0" || tab == "tab0") {
@@ -601,8 +609,12 @@ void WebAdminServer::handleRenameTab() {
   }
 
   tileConfig.setTabName(tab_index, name.c_str());
+  tileConfig.setTabIcon(tab_index, icon_name.c_str());
   tileConfig.saveTabNames();
 
+  // Display Live-Update: Tab-Button sofort aktualisieren
+  uiManager.refreshTabButton(tab_index);
+
   server.send(200, "application/json", "{\"success\":true}");
-  Serial.printf("[WebAdmin] Tab %u renamed to: %s\n", tab_index, name.c_str());
+  Serial.printf("[WebAdmin] Tab %u renamed to: %s (icon: %s)\n", tab_index, name.c_str(), icon_name.c_str());
 }

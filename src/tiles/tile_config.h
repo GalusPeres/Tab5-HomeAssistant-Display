@@ -44,10 +44,12 @@ struct TileGridConfig {
 };
 
 struct TabConfig {
-  char name[32];  // Custom tab name (empty = use default)
+  char name[32];      // Custom tab name (empty = use default)
+  char icon_name[32]; // MDI Icon Name (empty = no icon)
 
   TabConfig() {
-    name[0] = '\0';  // Empty = use default
+    name[0] = '\0';      // Empty = use default
+    icon_name[0] = '\0'; // Empty = no icon
   }
 };
 
@@ -70,6 +72,11 @@ public:
   // Tab names (configurable via web interface)
   const char* getTabName(uint8_t tab_index) const;
   void setTabName(uint8_t tab_index, const char* name);
+
+  // Tab icons (configurable via web interface)
+  const char* getTabIcon(uint8_t tab_index) const;
+  void setTabIcon(uint8_t tab_index, const char* icon_name);
+
   bool loadTabNames();
   bool saveTabNames();
 
