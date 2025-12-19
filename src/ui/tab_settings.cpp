@@ -68,6 +68,10 @@ static int32_t sleep_index_from_seconds(uint16_t seconds) {
 }
 
 static void format_sleep_label(char* buf, size_t len, uint16_t seconds) {
+  if (seconds == 0) {
+    snprintf(buf, len, "Nie");
+    return;
+  }
   if (seconds <= 60) {
     snprintf(buf, len, "%u s", static_cast<unsigned>(seconds));
   } else {
