@@ -14,8 +14,7 @@
 #define CONFIG_MQTT_BASE_MAX     32
 #define CONFIG_HA_PREFIX_MAX     48
 
-// 0 = never
-static constexpr uint16_t kSleepOptionsSec[] = {5, 15, 30, 60, 300, 900, 1800, 3600, 0};
+static constexpr uint16_t kSleepOptionsSec[] = {5, 15, 30, 60, 300, 900, 1800, 3600};
 static constexpr size_t kSleepOptionsSecCount = sizeof(kSleepOptionsSec) / sizeof(kSleepOptionsSec[0]);
 
 struct DeviceConfig {
@@ -32,9 +31,9 @@ struct DeviceConfig {
   // Display & Power Settings
   uint8_t display_brightness;  // 75-255
   bool auto_sleep_enabled;     // Auto-Sleep aktiv?
-  uint16_t auto_sleep_seconds; // Seconds until auto-sleep (0, 5-3600)
+  uint16_t auto_sleep_seconds; // Seconds until auto-sleep (5-3600)
   bool auto_sleep_battery_enabled;     // Auto-Sleep aktiv im Batteriebetrieb?
-  uint16_t auto_sleep_battery_seconds; // Seconds until auto-sleep (0, 5-3600)
+  uint16_t auto_sleep_battery_seconds; // Seconds until auto-sleep (5-3600)
 };
 
 class ConfigManager {

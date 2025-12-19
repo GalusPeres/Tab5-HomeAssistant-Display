@@ -6,7 +6,7 @@
 
 // Forward Declarations
 typedef void (*scene_publish_cb_t)(const char* scene_name);
-typedef void (*hotspot_start_cb_t)();
+typedef void (*hotspot_start_cb_t)(bool enable);
 
 // UI Manager - Verwaltet die Benutzeroberfläche
 class UIManager {

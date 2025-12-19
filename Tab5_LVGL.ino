@@ -23,11 +23,33 @@
 LV_FONT_DECLARE(mdi_icons_48);
 
 static uint32_t last_status_update = 0;
+static uint32_t ap_mode_started_at = 0;
+static const uint32_t AP_MODE_TIMEOUT_MS = 10UL * 60UL * 1000UL;
 
-static void start_hotspot_mode() {
-  if (networkManager.isMqttConnected()) networkManager.getMqttClient().disconnect();
-  WiFi.disconnect();
-  webConfigServer.start();
+static void set_hotspot_mode(bool enable) {
+  if (enable) {
+    if (webConfigServer.isRunning()) return;
+    if (networkManager.isMqttConnected()) networkManager.getMqttClient().disconnect();
+    WiFi.disconnect();
+    if (webConfigServer.start()) {
+      ap_mode_started_at = millis();
+      settings_update_ap_mode(true);
+    }
+    return;
+  }
+
+  if (!webConfigServer.isRunning()) {
+    ap_mode_started_at = 0;
+    settings_update_ap_mode(false);
+    return;
+  }
+
+  webConfigServer.stop();
+  ap_mode_started_at = 0;
+  settings_update_ap_mode(false);
+  if (configManager.isConfigured()) {
+    networkManager.connectWifi();
+  }
 }
 
 void setup() {
@@ -84,7 +106,7 @@ void setup() {
 
   Serial.println("[Setup] Building UI...");
   Serial.flush();
-  uiManager.buildUI(mqttPublishScene, start_hotspot_mode);
+  uiManager.buildUI(mqttPublishScene, set_hotspot_mode);
   Serial.println("[Setup] UI built");
   Serial.flush();
 
@@ -195,9 +217,21 @@ void loop() {
   if (first_run) Serial.println("[Loop] webConfigServer check...");
   if (webConfigServer.isRunning()) {
     webConfigServer.handle();
+    settings_update_ap_mode(true);
+    settings_update_power_status();
+
     if (webConfigServer.hasNewConfig()) { delay(1000); ESP.restart(); }
-    return;
+
+    if (ap_mode_started_at != 0 && (uint32_t)(now - ap_mode_started_at) > AP_MODE_TIMEOUT_MS) {
+      set_hotspot_mode(false);
+    }
+
+    if (webConfigServer.isRunning()) {
+      return;
+    }
   }
+
+  settings_update_ap_mode(false);
 
   if (first_run) Serial.println("[Loop] webAdminServer.handle()...");
   if (webAdminServer.isRunning()) webAdminServer.handle();
@@ -213,17 +247,19 @@ void loop() {
       if (first_run) Serial.println("[Loop] networkManager.update()...");
       networkManager.update();
     }
-    
-    if (now - last_status_update > 2000UL) {
+  }
+
+  if (now - last_status_update > 2000UL) {
+    last_status_update = now;
+    settings_update_power_status();
+    if (configManager.isConfigured()) {
       uiManager.serviceNtpSync();
-      last_status_update = now;
       const DeviceConfig& c = configManager.getConfig();
       if (networkManager.isWifiConnected()) {
         settings_update_wifi_status(true, c.wifi_ssid, WiFi.localIP().toString().c_str());
       } else {
         settings_update_wifi_status(false, nullptr, nullptr);
       }
-      settings_update_power_status();
       uiManager.updateStatusbar();
     }
   }

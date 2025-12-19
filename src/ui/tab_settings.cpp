@@ -18,8 +18,15 @@ static lv_obj_t *wifi_ssid_label = nullptr;
 static lv_obj_t *wifi_ip_label = nullptr;
 static lv_obj_t *ap_mode_btn = nullptr;
 static lv_obj_t *ap_mode_btn_label = nullptr;
+static lv_obj_t *ap_confirm_row = nullptr;
+static lv_obj_t *ap_confirm_yes_btn = nullptr;
+static lv_obj_t *ap_confirm_no_btn = nullptr;
+static lv_obj_t *confirm_panel = nullptr;
+static lv_obj_t *confirm_yes_btn = nullptr;
+static lv_obj_t *confirm_no_btn = nullptr;
 static lv_obj_t *mqtt_notice_label = nullptr;
 static bool ap_mode_confirm_pending = false;
+static bool ap_mode_active = false;
 
 // Sleep Settings
 static lv_obj_t *sleep_checkbox = nullptr;
@@ -35,12 +42,21 @@ static lv_obj_t *sleep_battery_label = nullptr;
 static lv_obj_t *power_status_label = nullptr;
 static lv_obj_t *power_voltage_label = nullptr;
 static lv_obj_t *power_level_label = nullptr;
+static lv_obj_t *power_status_box = nullptr;
+
+static const int kSettingsPadX = 20;
+static const int kSettingsTitleY = 8;
+static const int kSettingsRowY = 44;
+static const int kSettingsSliderY = 78;
+static const int kSettingsStatusY = 114;
+static const int kSettingsStatusGap = 18;
 
 // Forward declarations
 static void show_network_page();
 static void show_display_page();
 static void show_energy_page();
 static void show_main_menu();
+void settings_update_ap_mode(bool running);
 
 static uint16_t sleep_seconds_from_index(int32_t index) {
   if (index < 0) {
@@ -68,15 +84,27 @@ static int32_t sleep_index_from_seconds(uint16_t seconds) {
 }
 
 static void format_sleep_label(char* buf, size_t len, uint16_t seconds) {
-  if (seconds == 0) {
-    snprintf(buf, len, "Nie");
-    return;
-  }
   if (seconds <= 60) {
     snprintf(buf, len, "%u s", static_cast<unsigned>(seconds));
   } else {
     snprintf(buf, len, "%u min", static_cast<unsigned>(seconds / 60));
   }
+}
+
+static int32_t sleep_slider_max_index() {
+  return static_cast<int32_t>(kSleepOptionsSecCount);
+}
+
+static bool sleep_index_is_never(int32_t index) {
+  return index >= static_cast<int32_t>(kSleepOptionsSecCount);
+}
+
+static void format_sleep_label_for_index(char* buf, size_t len, int32_t index) {
+  if (sleep_index_is_never(index)) {
+    snprintf(buf, len, "Nie");
+    return;
+  }
+  format_sleep_label(buf, len, sleep_seconds_from_index(index));
 }
 
 static void on_brightness(lv_event_t *e) {
@@ -137,19 +165,20 @@ static void on_sleep_slider(lv_event_t *e) {
   lv_obj_t *slider = (lv_obj_t*)lv_event_get_target(e);
   lv_event_code_t code = lv_event_get_code(e);
   int32_t index = lv_slider_get_value(slider);
-  uint16_t seconds = sleep_seconds_from_index(index);
 
   // Label sofort updaten
   static char buf[16];
-  format_sleep_label(buf, sizeof(buf), seconds);
+  format_sleep_label_for_index(buf, sizeof(buf), index);
   if (sleep_time_label) lv_label_set_text(sleep_time_label, buf);
 
   // Config NUR beim Loslassen speichern (nicht bei jeder Bewegung!)
   if (code == LV_EVENT_RELEASED) {
     const DeviceConfig& cfg = configManager.getConfig();
+    bool enabled = !sleep_index_is_never(index);
+    uint16_t seconds = enabled ? sleep_seconds_from_index(index) : cfg.auto_sleep_seconds;
     configManager.saveDisplaySettings(
         cfg.display_brightness,
-        cfg.auto_sleep_enabled,
+        enabled,
         seconds,
         cfg.auto_sleep_battery_enabled,
         cfg.auto_sleep_battery_seconds);
@@ -175,85 +204,65 @@ static void on_sleep_battery_slider(lv_event_t *e) {
   lv_obj_t *slider = (lv_obj_t*)lv_event_get_target(e);
   lv_event_code_t code = lv_event_get_code(e);
   int32_t index = lv_slider_get_value(slider);
-  uint16_t seconds = sleep_seconds_from_index(index);
 
   static char buf[16];
-  format_sleep_label(buf, sizeof(buf), seconds);
+  format_sleep_label_for_index(buf, sizeof(buf), index);
   if (sleep_battery_time_label) lv_label_set_text(sleep_battery_time_label, buf);
 
   if (code == LV_EVENT_RELEASED) {
     const DeviceConfig& cfg = configManager.getConfig();
+    bool enabled = !sleep_index_is_never(index);
+    uint16_t seconds = enabled ? sleep_seconds_from_index(index) : cfg.auto_sleep_battery_seconds;
     configManager.saveDisplaySettings(
         cfg.display_brightness,
         cfg.auto_sleep_enabled,
         cfg.auto_sleep_seconds,
-        cfg.auto_sleep_battery_enabled,
+        enabled,
         seconds);
   }
 }
 
 // Power Status Update (public, wird von main loop aufgerufen)
 void settings_update_power_status() {
-  if (!power_status_label || !power_voltage_label || !power_level_label) return;
+  if (!power_status_label || !power_level_label) return;
 
-  // Korrekte Datentypen laut API
-  bool isCharging = M5.Power.isCharging();
-  int16_t batVoltage = M5.Power.getBatteryVoltage();  // int16_t!
-  int32_t batLevel = M5.Power.getBatteryLevel();      // int32_t!
-  int32_t batCurrent = M5.Power.getBatteryCurrent();  // mA (+=charge / -=discharge)
+  int32_t batLevel = M5.Power.getBatteryLevel();
+  int32_t batCurrent = M5.Power.getBatteryCurrent();
 
-  // Debug: Zeige rohe Werte
-  static char status_buf[50];
-  static char voltage_buf[50];
-  static char level_buf[50];
+  static char status_buf[40];
+  static char level_buf[32];
 
-  // Hysterese gegen Flackern: Merke letzten stabilen Status
   static bool lastPoweredState = false;
   static uint32_t lastStateChange = 0;
-  static int16_t stableVoltage = 0;
-
   uint32_t now = millis();
 
-  // Status basierend auf STROMRICHTUNG (zuverlässiger als isCharging)
-  // NEGATIV = lädt (Netzteil), ~0 mA = kein Akku/Netzteil, POSITIV = entlädt (Batterie)
   bool currentPowered = (batCurrent <= 50);
-
-  // Hysterese: Nur wechseln wenn mindestens 2 Sekunden vergangen
   if (currentPowered != lastPoweredState) {
     if (now - lastStateChange > 2000) {
       lastPoweredState = currentPowered;
       lastStateChange = now;
     }
   } else {
-    lastStateChange = now; // Reset timer wenn Status stabil
+    lastStateChange = now;
   }
 
-  // Nutze stabilen Spannungswert (nimm höheren Wert wenn verfügbar)
-  if (batVoltage > stableVoltage || (now - lastStateChange < 100)) {
-    stableVoltage = batVoltage;
-  }
-
-  // Nutze API-Level direkt (ist am genauesten)
   int displayLevel = (batLevel >= 0 && batLevel <= 100) ? batLevel : 0;
-
-  // Einfache Status-Anzeige (nutze stabilen State)
   const char* statusText = lastPoweredState ? "Netzteil" : "Akku";
-  const char* stateText = "ok";
 
-  snprintf(status_buf, sizeof(status_buf), "Status:  %s (%s)", statusText, stateText);
-  snprintf(voltage_buf, sizeof(voltage_buf), "Spannung: %d mV  (%d mA)", stableVoltage, batCurrent);
+  snprintf(status_buf, sizeof(status_buf), "Status: %s", statusText);
   snprintf(level_buf, sizeof(level_buf), "Level: %d%%", displayLevel);
 
   lv_label_set_text(power_status_label, status_buf);
-  lv_label_set_text(power_voltage_label, voltage_buf);
   lv_label_set_text(power_level_label, level_buf);
 }
 
-static lv_obj_t *confirm_panel = nullptr;
-static lv_obj_t *confirm_yes_btn = nullptr;
-static lv_obj_t *confirm_no_btn = nullptr;
-
 static void hide_confirm_panel() {
+  if (ap_confirm_row) {
+    lv_obj_add_flag(ap_confirm_row, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (ap_mode_btn && !ap_mode_active) {
+    lv_obj_clear_flag(ap_mode_btn, LV_OBJ_FLAG_HIDDEN);
+  }
   if (confirm_panel) {
     lv_obj_add_flag(confirm_panel, LV_OBJ_FLAG_HIDDEN);
   }
@@ -262,8 +271,9 @@ static void hide_confirm_panel() {
 
 static void on_confirm_yes_clicked(lv_event_t *e) {
   if (g_hotspot_callback) {
-    g_hotspot_callback();
+    g_hotspot_callback(true);
   }
+  settings_update_ap_mode(true);
   hide_confirm_panel();
 }
 
@@ -272,11 +282,83 @@ static void on_confirm_no_clicked(lv_event_t *e) {
 }
 
 static void on_ap_mode_clicked(lv_event_t *e) {
-  if (confirm_panel && !ap_mode_confirm_pending) {
-    ap_mode_confirm_pending = true;
-    lv_obj_clear_flag(confirm_panel, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(confirm_panel);
+  if (ap_mode_active) {
+    if (g_hotspot_callback) {
+      g_hotspot_callback(false);
+    }
+    return;
   }
+  if (ap_confirm_row && !ap_mode_confirm_pending) {
+    ap_mode_confirm_pending = true;
+    lv_obj_clear_flag(ap_confirm_row, LV_OBJ_FLAG_HIDDEN);
+    if (ap_mode_btn) {
+      lv_obj_add_flag(ap_mode_btn, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
+}
+
+static lv_obj_t *create_settings_card(lv_obj_t *parent, uint8_t col, uint8_t row) {
+  lv_obj_t *card = lv_obj_create(parent);
+  lv_obj_set_grid_cell(card, LV_GRID_ALIGN_STRETCH, col, 1, LV_GRID_ALIGN_STRETCH, row, 1);
+  lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_bg_color(card, lv_color_hex(0x2A2A2A), 0);
+  lv_obj_set_style_border_opa(card, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_outline_opa(card, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_shadow_opa(card, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_radius(card, 22, 0);
+  lv_obj_set_style_pad_hor(card, 20, 0);
+  lv_obj_set_style_pad_ver(card, 18, 0);
+  lv_obj_set_style_pad_row(card, 8, 0);
+  lv_obj_set_style_pad_column(card, 10, 0);
+  lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+  return card;
+}
+
+static lv_obj_t *create_card_row(lv_obj_t *parent) {
+  lv_obj_t *row = lv_obj_create(parent);
+  lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_width(row, LV_PCT(100));
+  lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_opa(row, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_pad_all(row, 0, 0);
+  lv_obj_set_style_pad_column(row, 8, 0);
+  lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  return row;
+}
+
+static lv_obj_t *create_slider_row(lv_obj_t *parent) {
+  lv_obj_t *row = lv_obj_create(parent);
+  lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_width(row, LV_PCT(100));
+  lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_opa(row, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_pad_all(row, 0, 0);
+  lv_obj_set_style_pad_bottom(row, 2, 0);
+  lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  return row;
+}
+
+static lv_obj_t *create_status_box(lv_obj_t *parent) {
+  lv_obj_t *box = lv_obj_create(parent);
+  lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_width(box, LV_PCT(100));
+  lv_obj_set_style_bg_opa(box, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_opa(box, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_pad_all(box, 0, 0);
+  lv_obj_set_style_pad_row(box, 2, 0);
+  lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(box, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+  return box;
+}
+
+static void style_settings_slider(lv_obj_t *slider) {
+  lv_obj_set_width(slider, LV_PCT(80));
+  lv_obj_set_height(slider, 18);
+  lv_obj_set_style_width(slider, 26, LV_PART_KNOB);
+  lv_obj_set_style_height(slider, 26, LV_PART_KNOB);
 }
 
 // ========== Button Event Handlers ==========
@@ -779,13 +861,230 @@ static void show_energy_page() {
 // ========== Public API ==========
 void build_settings_tab(lv_obj_t *tab, hotspot_callback_t hotspot_cb) {
   g_hotspot_callback = hotspot_cb;
+  ap_mode_confirm_pending = false;
 
-  create_main_menu(tab);
-  create_network_page(tab);
-  create_display_page(tab);
-  create_energy_page(tab);
+  lv_obj_clean(tab);
+  lv_obj_clear_flag(tab, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_bg_color(tab, lv_color_hex(0x000000), 0);
+  lv_obj_set_style_bg_opa(tab, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_opa(tab, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_pad_all(tab, 24, 0);
 
-  show_main_menu();
+  static int32_t col_dsc[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+  static int32_t row_dsc[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+  lv_obj_set_grid_dsc_array(tab, col_dsc, row_dsc);
+  lv_obj_set_style_pad_column(tab, 24, 0);
+  lv_obj_set_style_pad_row(tab, 24, 0);
+
+  const DeviceConfig& cfg = configManager.getConfig();
+
+  // Display tile
+  lv_obj_t *card_display = create_settings_card(tab, 0, 0);
+  lv_obj_set_layout(card_display, LV_LAYOUT_NONE);
+  lv_obj_t *title = lv_label_create(card_display);
+  lv_label_set_text(title, LV_SYMBOL_IMAGE " Display");
+  lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
+  lv_obj_set_style_text_color(title, lv_color_white(), 0);
+  lv_obj_align(title, LV_ALIGN_TOP_LEFT, kSettingsPadX, kSettingsTitleY);
+
+  lv_obj_t *label = lv_label_create(card_display);
+  lv_label_set_text(label, "Helligkeit");
+  lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_color(label, lv_color_white(), 0);
+  lv_obj_align(label, LV_ALIGN_TOP_LEFT, kSettingsPadX, kSettingsRowY);
+
+  brightness_label = lv_label_create(card_display);
+  lv_obj_set_style_text_font(brightness_label, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_color(brightness_label, lv_color_white(), 0);
+  lv_obj_align(brightness_label, LV_ALIGN_TOP_RIGHT, -kSettingsPadX, kSettingsRowY);
+
+  lv_obj_t *brightness_slider = lv_slider_create(card_display);
+  style_settings_slider(brightness_slider);
+  lv_obj_align(brightness_slider, LV_ALIGN_TOP_MID, 0, kSettingsSliderY);
+  lv_slider_set_range(brightness_slider, 75, 255);
+  int current_brightness = M5.Display.getBrightness();
+  lv_slider_set_value(brightness_slider, current_brightness, LV_ANIM_OFF);
+  lv_obj_add_event_cb(brightness_slider, on_brightness, LV_EVENT_VALUE_CHANGED, nullptr);
+  lv_obj_add_event_cb(brightness_slider, on_brightness, LV_EVENT_RELEASED, nullptr);
+
+  static char bright_buf[16];
+  snprintf(bright_buf, sizeof(bright_buf), "%d", current_brightness);
+  lv_label_set_text(brightness_label, bright_buf);
+
+  // WiFi tile
+  lv_obj_t *card_wifi = create_settings_card(tab, 0, 1);
+  title = lv_label_create(card_wifi);
+  lv_label_set_text(title, LV_SYMBOL_WIFI " WLAN");
+  lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
+  lv_obj_set_style_text_color(title, lv_color_white(), 0);
+
+  wifi_status_label = lv_label_create(card_wifi);
+  lv_label_set_text(wifi_status_label, "Status: " LV_SYMBOL_CLOSE " Nicht verbunden");
+  lv_obj_set_style_text_font(wifi_status_label, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_color(wifi_status_label, lv_color_hex(0xFF6B6B), 0);
+
+  wifi_ssid_label = lv_label_create(card_wifi);
+  lv_label_set_text(wifi_ssid_label, "Netzwerk: ---");
+  lv_obj_set_style_text_font(wifi_ssid_label, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(wifi_ssid_label, lv_color_hex(0xC8C8C8), 0);
+
+  wifi_ip_label = lv_label_create(card_wifi);
+  lv_label_set_text(wifi_ip_label, "IP-Adresse: ---");
+  lv_obj_set_style_text_font(wifi_ip_label, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(wifi_ip_label, lv_color_hex(0xC8C8C8), 0);
+
+  mqtt_notice_label = lv_label_create(card_wifi);
+  lv_label_set_text(mqtt_notice_label,
+                    LV_SYMBOL_WARNING " MQTT nicht konfiguriert\n"
+                    "Web-Interface oeffnen und Zugangsdaten setzen.");
+  lv_obj_set_width(mqtt_notice_label, LV_PCT(100));
+  lv_label_set_long_mode(mqtt_notice_label, LV_LABEL_LONG_WRAP);
+  lv_obj_set_style_text_font(mqtt_notice_label, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(mqtt_notice_label, lv_color_hex(0xFFC04D), 0);
+  lv_obj_add_flag(mqtt_notice_label, LV_OBJ_FLAG_HIDDEN);
+
+  ap_mode_btn = lv_button_create(card_wifi);
+  lv_obj_set_width(ap_mode_btn, LV_PCT(100));
+  lv_obj_set_height(ap_mode_btn, 60);
+  lv_obj_set_style_bg_color(ap_mode_btn, lv_color_hex(0xFF9800), 0);
+  lv_obj_set_style_border_opa(ap_mode_btn, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_outline_opa(ap_mode_btn, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_shadow_opa(ap_mode_btn, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_radius(ap_mode_btn, 18, 0);
+  lv_obj_add_event_cb(ap_mode_btn, on_ap_mode_clicked, LV_EVENT_CLICKED, nullptr);
+
+  ap_mode_btn_label = lv_label_create(ap_mode_btn);
+  lv_label_set_text(ap_mode_btn_label, "AP aktivieren");
+  lv_obj_set_style_text_font(ap_mode_btn_label, &lv_font_montserrat_20, 0);
+  lv_obj_center(ap_mode_btn_label);
+
+  ap_confirm_row = lv_obj_create(card_wifi);
+  lv_obj_set_width(ap_confirm_row, LV_PCT(100));
+  lv_obj_set_style_bg_opa(ap_confirm_row, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_opa(ap_confirm_row, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_pad_all(ap_confirm_row, 0, 0);
+  lv_obj_set_style_pad_column(ap_confirm_row, 12, 0);
+  lv_obj_set_flex_flow(ap_confirm_row, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(ap_confirm_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_add_flag(ap_confirm_row, LV_OBJ_FLAG_HIDDEN);
+
+  ap_confirm_yes_btn = lv_button_create(ap_confirm_row);
+  lv_obj_set_height(ap_confirm_yes_btn, 50);
+  lv_obj_set_flex_grow(ap_confirm_yes_btn, 1);
+  lv_obj_set_style_bg_color(ap_confirm_yes_btn, lv_color_hex(0xC62828), 0);
+  lv_obj_set_style_border_opa(ap_confirm_yes_btn, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_outline_opa(ap_confirm_yes_btn, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_shadow_opa(ap_confirm_yes_btn, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_radius(ap_confirm_yes_btn, 18, 0);
+  lv_obj_add_event_cb(ap_confirm_yes_btn, on_confirm_yes_clicked, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t *ap_yes_label = lv_label_create(ap_confirm_yes_btn);
+  lv_label_set_text(ap_yes_label, "Bestaetigen");
+  lv_obj_set_style_text_font(ap_yes_label, &lv_font_montserrat_20, 0);
+  lv_obj_center(ap_yes_label);
+
+  ap_confirm_no_btn = lv_button_create(ap_confirm_row);
+  lv_obj_set_height(ap_confirm_no_btn, 50);
+  lv_obj_set_flex_grow(ap_confirm_no_btn, 1);
+  lv_obj_set_style_bg_color(ap_confirm_no_btn, lv_color_hex(0x555555), 0);
+  lv_obj_set_style_border_opa(ap_confirm_no_btn, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_outline_opa(ap_confirm_no_btn, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_shadow_opa(ap_confirm_no_btn, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_radius(ap_confirm_no_btn, 18, 0);
+  lv_obj_add_event_cb(ap_confirm_no_btn, on_confirm_no_clicked, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t *ap_no_label = lv_label_create(ap_confirm_no_btn);
+  lv_label_set_text(ap_no_label, "Abbrechen");
+  lv_obj_set_style_text_font(ap_no_label, &lv_font_montserrat_20, 0);
+  lv_obj_center(ap_no_label);
+
+  // Sleep mains tile
+  lv_obj_t *card_mains = create_settings_card(tab, 1, 0);
+  lv_obj_set_layout(card_mains, LV_LAYOUT_NONE);
+  title = lv_label_create(card_mains);
+  lv_label_set_text(title, LV_SYMBOL_POWER " Sleep Netzteil");
+  lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
+  lv_obj_set_style_text_color(title, lv_color_white(), 0);
+  lv_obj_align(title, LV_ALIGN_TOP_LEFT, kSettingsPadX, kSettingsTitleY);
+
+  label = lv_label_create(card_mains);
+  lv_label_set_text(label, "Auto-Sleep nach");
+  lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_color(label, lv_color_white(), 0);
+  lv_obj_align(label, LV_ALIGN_TOP_LEFT, kSettingsPadX, kSettingsRowY);
+
+  sleep_time_label = lv_label_create(card_mains);
+  lv_obj_set_style_text_font(sleep_time_label, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_color(sleep_time_label, lv_color_white(), 0);
+  lv_obj_align(sleep_time_label, LV_ALIGN_TOP_RIGHT, -kSettingsPadX, kSettingsRowY);
+
+  sleep_slider = lv_slider_create(card_mains);
+  style_settings_slider(sleep_slider);
+  lv_obj_align(sleep_slider, LV_ALIGN_TOP_MID, 0, kSettingsSliderY);
+  lv_slider_set_range(sleep_slider, 0, sleep_slider_max_index());
+  int32_t sleep_index = cfg.auto_sleep_enabled
+                        ? sleep_index_from_seconds(cfg.auto_sleep_seconds)
+                        : sleep_slider_max_index();
+  lv_slider_set_value(sleep_slider, sleep_index, LV_ANIM_OFF);
+  lv_obj_add_event_cb(sleep_slider, on_sleep_slider, LV_EVENT_VALUE_CHANGED, nullptr);
+  lv_obj_add_event_cb(sleep_slider, on_sleep_slider, LV_EVENT_RELEASED, nullptr);
+
+  static char sleep_buf[16];
+  format_sleep_label_for_index(sleep_buf, sizeof(sleep_buf), sleep_index);
+  lv_label_set_text(sleep_time_label, sleep_buf);
+
+  // Sleep battery tile
+  lv_obj_t *card_battery = create_settings_card(tab, 1, 1);
+  lv_obj_set_layout(card_battery, LV_LAYOUT_NONE);
+  title = lv_label_create(card_battery);
+  lv_label_set_text(title, LV_SYMBOL_BATTERY_FULL " Sleep Batterie");
+  lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
+  lv_obj_set_style_text_color(title, lv_color_white(), 0);
+  lv_obj_align(title, LV_ALIGN_TOP_LEFT, kSettingsPadX, kSettingsTitleY);
+
+  label = lv_label_create(card_battery);
+  lv_label_set_text(label, "Auto-Sleep nach");
+  lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_color(label, lv_color_white(), 0);
+  lv_obj_align(label, LV_ALIGN_TOP_LEFT, kSettingsPadX, kSettingsRowY);
+
+  sleep_battery_time_label = lv_label_create(card_battery);
+  lv_obj_set_style_text_font(sleep_battery_time_label, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_color(sleep_battery_time_label, lv_color_white(), 0);
+  lv_obj_align(sleep_battery_time_label, LV_ALIGN_TOP_RIGHT, -kSettingsPadX, kSettingsRowY);
+
+  sleep_battery_slider = lv_slider_create(card_battery);
+  style_settings_slider(sleep_battery_slider);
+  lv_obj_align(sleep_battery_slider, LV_ALIGN_TOP_MID, 0, kSettingsSliderY);
+  lv_slider_set_range(sleep_battery_slider, 0, sleep_slider_max_index());
+  int32_t sleep_battery_index = cfg.auto_sleep_battery_enabled
+                                ? sleep_index_from_seconds(cfg.auto_sleep_battery_seconds)
+                                : sleep_slider_max_index();
+  lv_slider_set_value(sleep_battery_slider, sleep_battery_index, LV_ANIM_OFF);
+  lv_obj_add_event_cb(sleep_battery_slider, on_sleep_battery_slider, LV_EVENT_VALUE_CHANGED, nullptr);
+  lv_obj_add_event_cb(sleep_battery_slider, on_sleep_battery_slider, LV_EVENT_RELEASED, nullptr);
+
+  static char sleep_battery_buf[16];
+  format_sleep_label_for_index(sleep_battery_buf, sizeof(sleep_battery_buf), sleep_battery_index);
+  lv_label_set_text(sleep_battery_time_label, sleep_battery_buf);
+
+  power_status_label = lv_label_create(card_battery);
+  lv_label_set_text(power_status_label, "Status: ---");
+  lv_obj_set_width(power_status_label, LV_PCT(100));
+  lv_label_set_long_mode(power_status_label, LV_LABEL_LONG_CLIP);
+  lv_obj_set_style_text_font(power_status_label, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(power_status_label, lv_color_white(), 0);
+  lv_obj_align(power_status_label, LV_ALIGN_TOP_LEFT, kSettingsPadX, kSettingsStatusY);
+
+  power_level_label = lv_label_create(card_battery);
+  lv_label_set_text(power_level_label, "Level: --%");
+  lv_obj_set_width(power_level_label, LV_PCT(100));
+  lv_label_set_long_mode(power_level_label, LV_LABEL_LONG_CLIP);
+  lv_obj_set_style_text_font(power_level_label, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(power_level_label, lv_color_white(), 0);
+  lv_obj_align(power_level_label, LV_ALIGN_TOP_LEFT, kSettingsPadX, kSettingsStatusY + kSettingsStatusGap);
+
+  settings_update_power_status();
+
+  settings_update_ap_mode(false);
 }
 
 void settings_update_wifi_status(bool connected, const char* ssid, const char* ip) {
@@ -817,5 +1116,21 @@ void settings_show_mqtt_warning(bool show) {
     lv_obj_clear_flag(mqtt_notice_label, LV_OBJ_FLAG_HIDDEN);
   } else {
     lv_obj_add_flag(mqtt_notice_label, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+void settings_update_ap_mode(bool running) {
+  ap_mode_active = running;
+  if (ap_mode_btn_label) {
+    lv_label_set_text(ap_mode_btn_label, running ? "AP beenden" : "AP aktivieren");
+  }
+  if (ap_mode_btn) {
+    lv_obj_set_style_bg_color(ap_mode_btn,
+                              running ? lv_color_hex(0xC62828) : lv_color_hex(0xFF9800),
+                              0);
+    lv_obj_clear_flag(ap_mode_btn, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (running) {
+    hide_confirm_panel();
   }
 }

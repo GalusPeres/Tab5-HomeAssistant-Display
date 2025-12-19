@@ -40,10 +40,10 @@ void PowerManager::setHighPerformance(bool enable) {
 uint32_t PowerManager::getSleepTimeout() const {
   const DeviceConfig& cfg = configManager.getConfig();
   if (isPoweredByMains()) {
-    if (!cfg.auto_sleep_enabled || cfg.auto_sleep_seconds == 0) return 0xFFFFFFFF;
+    if (!cfg.auto_sleep_enabled) return 0xFFFFFFFF;
     return cfg.auto_sleep_seconds * 1000UL;
   }
-  if (!cfg.auto_sleep_battery_enabled || cfg.auto_sleep_battery_seconds == 0) return 0xFFFFFFFF;
+  if (!cfg.auto_sleep_battery_enabled) return 0xFFFFFFFF;
   return cfg.auto_sleep_battery_seconds * 1000UL;
 }
 
