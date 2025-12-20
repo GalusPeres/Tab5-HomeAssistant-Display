@@ -728,6 +728,10 @@ String WebAdminServer::getStatusJSON() {
   json += ",\"ha_prefix\":\"" + String(cfg.ha_prefix) + "\"";
   json += ",\"bridge_configured\":" + String(haBridgeConfig.hasData() ? "true" : "false");
   json += ",\"free_heap\":" + String(ESP.getFreeHeap());
+  json += ",\"heap_total\":" + String(ESP.getHeapSize());
+  json += ",\"heap_min_free\":" + String(ESP.getMinFreeHeap());
+  json += ",\"psram_free\":" + String(ESP.getFreePsram());
+  json += ",\"psram_total\":" + String(ESP.getPsramSize());
   json += ",\"nvs_used_entries\":" + String(stats_ok ? stats.used_entries : -1);
   json += ",\"nvs_free_entries\":" + String(stats_ok ? stats.free_entries : -1);
   json += ",\"nvs_namespace_count\":" + String(stats_ok ? stats.namespace_count : -1);
