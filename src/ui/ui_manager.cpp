@@ -5,6 +5,7 @@
 #include "src/core/display_manager.h"
 #include "src/tiles/mdi_icons.h"
 #include "src/tiles/tile_config.h"
+#include "src/fonts/ui_fonts.h"
 #include "font_roboto_mono_digits_48.h"
 #include "font_roboto_mono_digits_24.h"
 #include <WiFi.h>
@@ -247,7 +248,7 @@ lv_obj_t* UIManager::setupTabButton(lv_obj_t *btn, uint8_t tab_index, const char
     text_label = lv_label_create(btn);
     lv_label_set_text(text_label, tab_name);
     lv_obj_set_style_text_color(text_label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(text_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(text_label, &ui_font_24, 0);
     lv_label_set_long_mode(text_label, LV_LABEL_LONG_DOT);
     lv_obj_set_width(text_label, LV_PCT(90));
     lv_obj_set_style_text_align(text_label, LV_TEXT_ALIGN_CENTER, 0);
@@ -263,7 +264,7 @@ lv_obj_t* UIManager::setupTabButton(lv_obj_t *btn, uint8_t tab_index, const char
       lv_label_set_text(text_label, fallback);
     }
     lv_obj_set_style_text_color(text_label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(text_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(text_label, &ui_font_24, 0);
     lv_obj_set_style_text_align(text_label, LV_TEXT_ALIGN_CENTER, 0);
   }
 
@@ -516,7 +517,7 @@ void UIManager::refreshTabButton(uint8_t tab_index) {
     lv_obj_t *text_label = lv_label_create(btn);
     lv_label_set_text(text_label, tabName);
     lv_obj_set_style_text_color(text_label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(text_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(text_label, &ui_font_24, 0);
     lv_label_set_long_mode(text_label, LV_LABEL_LONG_DOT);
     lv_obj_set_width(text_label, LV_PCT(90));
     lv_obj_set_style_text_align(text_label, LV_TEXT_ALIGN_CENTER, 0);
@@ -535,7 +536,7 @@ void UIManager::refreshTabButton(uint8_t tab_index) {
       lv_label_set_text(text_label, fallback);
     }
     lv_obj_set_style_text_color(text_label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(text_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(text_label, &ui_font_24, 0);
     lv_obj_set_style_text_align(text_label, LV_TEXT_ALIGN_CENTER, 0);
 
     tab_labels[tab_index] = text_label;

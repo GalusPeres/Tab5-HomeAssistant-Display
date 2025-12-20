@@ -5,6 +5,7 @@
 #include "src/tiles/tile_config.h"
 #include "src/tiles/mdi_icons.h"
 #include "src/ui/ui_manager.h"
+#include "src/fonts/ui_fonts.h"
 #include <Arduino.h>
 #include <math.h>
 #include <stdlib.h>
@@ -13,11 +14,7 @@
 static const int CARD_H = 150;
 
 /* === Fonts === */
-#if defined(LV_FONT_MONTSERRAT_24) && LV_FONT_MONTSERRAT_24
-  #define FONT_TITLE (&lv_font_montserrat_24)
-#else
-  #define FONT_TITLE (LV_FONT_DEFAULT)
-#endif
+#define FONT_TITLE (&ui_font_24)
 
 #if defined(LV_FONT_MONTSERRAT_48) && LV_FONT_MONTSERRAT_48
   #define FONT_VALUE (&lv_font_montserrat_48)
@@ -27,13 +24,7 @@ static const int CARD_H = 150;
   #define FONT_VALUE (LV_FONT_DEFAULT)
 #endif
 
-#if defined(LV_FONT_MONTSERRAT_28) && LV_FONT_MONTSERRAT_28
-  #define FONT_UNIT (&lv_font_montserrat_28)
-#elif defined(LV_FONT_MONTSERRAT_24) && LV_FONT_MONTSERRAT_24
-  #define FONT_UNIT (&lv_font_montserrat_24)
-#else
-  #define FONT_UNIT (FONT_TITLE)
-#endif
+#define FONT_UNIT (&ui_font_24)
 
 /* === Globale State für Updates === */
 struct SensorTileWidgets {
@@ -1031,6 +1022,7 @@ lv_obj_t* render_switch_tile(lv_obj_t* parent, int col, int row, const Tile& til
     if (switch_obj) {
       lv_obj_set_size(switch_obj, 90, 44);
       lv_obj_align(switch_obj, LV_ALIGN_CENTER, 0, 28);
+      lv_obj_set_ext_click_area(switch_obj, 18);
       lv_obj_set_style_bg_color(switch_obj, lv_color_hex(0xB0B0B0), LV_PART_INDICATOR | LV_STATE_DEFAULT);
       lv_obj_set_style_bg_color(switch_obj, lv_color_hex(0xFFD54F), LV_PART_INDICATOR | LV_STATE_CHECKED);
       SwitchWidgetEventData* widget_data = new SwitchWidgetEventData{tile.sensor_entity};

@@ -235,7 +235,7 @@ void loop() {
   if (webConfigServer.isRunning()) {
     webConfigServer.handle();
     settings_update_ap_mode(true);
-    settings_update_wifi_status_ap("Tab5_Config", "192.168.4.1");
+    settings_update_wifi_status_ap("Tab5_Config", "12345678");
     settings_update_power_status();
 
     if (webConfigServer.hasNewConfig()) { delay(1000); ESP.restart(); }

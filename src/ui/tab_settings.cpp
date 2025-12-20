@@ -3,6 +3,7 @@
 #include "src/ui/tab_settings.h"
 #include "src/core/config_manager.h"
 #include "src/tiles/mdi_icons.h"
+#include "src/fonts/ui_fonts.h"
 
 static lv_obj_t *brightness_label = nullptr;
 static hotspot_callback_t g_hotspot_callback = nullptr;
@@ -35,13 +36,18 @@ static lv_obj_t *power_status_label = nullptr;
 static lv_obj_t *power_level_label = nullptr;
 
 static const int kSettingsColLeftPct = 12;
-static const int kSettingsColMidPct = 34;
-static const int kSettingsColRightPct = 54;
+static const int kSettingsColMidPct = 26;
+static const int kSettingsColRightPct = 62;
 static const int kSettingsColGap = 12;
 static const int kSettingsColRowGap = 6;
 static const int kSettingsBtnHeight = 88;
 static const int kSettingsButtonWidthPct = 90;
 static const int kSettingsSliderWidthPct = 45;
+static const int kSettingsSliderLabelWidth = 220;
+static const int kSettingsSliderValueWidth = 70;
+static const int kSettingsSliderHeight = 18;
+static const int kSettingsSliderKnobSize = 40;
+static const int kSettingsSliderClickPad = 22;
 
 // Forward declarations
 void settings_update_ap_mode(bool running);
@@ -145,7 +151,7 @@ static void create_icon_block(lv_obj_t *parent, const char *icon_name, const cha
 
   lv_obj_t *label = lv_label_create(parent);
   lv_label_set_text(label, label_text);
-  lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(label, &ui_font_24, 0);
   lv_obj_set_style_text_color(label, lv_color_white(), 0);
   lv_obj_set_style_margin_top(label, 8, 0);
 }
@@ -339,7 +345,7 @@ static lv_obj_t *create_slider_row(lv_obj_t *parent) {
   lv_obj_set_style_border_opa(row, LV_OPA_TRANSP, 0);
   lv_obj_set_style_pad_all(row, 0, 0);
   lv_obj_set_style_pad_bottom(row, 2, 0);
-  lv_obj_set_style_pad_right(row, 16, 0);
+  lv_obj_set_style_pad_right(row, 28, 0);
   lv_obj_set_style_pad_column(row, 12, 0);
   lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -347,9 +353,10 @@ static lv_obj_t *create_slider_row(lv_obj_t *parent) {
 }
 
 static void style_settings_slider(lv_obj_t *slider) {
-  lv_obj_set_height(slider, 18);
-  lv_obj_set_style_width(slider, 28, LV_PART_KNOB);
-  lv_obj_set_style_height(slider, 28, LV_PART_KNOB);
+  lv_obj_set_height(slider, kSettingsSliderHeight);
+  lv_obj_set_style_width(slider, kSettingsSliderKnobSize, LV_PART_KNOB);
+  lv_obj_set_style_height(slider, kSettingsSliderKnobSize, LV_PART_KNOB);
+  lv_obj_set_ext_click_area(slider, kSettingsSliderClickPad);
 }
 
 // ========== Public API ==========
@@ -396,7 +403,9 @@ void build_settings_tab(lv_obj_t *tab, hotspot_callback_t hotspot_cb) {
   lv_obj_t *brightness_row = create_slider_row(display_col_right);
   lv_obj_t *brightness_row_label = lv_label_create(brightness_row);
   lv_label_set_text(brightness_row_label, "Helligkeit");
-  lv_obj_set_style_text_font(brightness_row_label, &lv_font_montserrat_20, 0);
+  lv_obj_set_width(brightness_row_label, kSettingsSliderLabelWidth);
+  lv_label_set_long_mode(brightness_row_label, LV_LABEL_LONG_CLIP);
+  lv_obj_set_style_text_font(brightness_row_label, &ui_font_24, 0);
   lv_obj_set_style_text_color(brightness_row_label, lv_color_white(), 0);
   lv_obj_t *brightness_slider = lv_slider_create(brightness_row);
   style_settings_slider(brightness_slider);
@@ -408,8 +417,11 @@ void build_settings_tab(lv_obj_t *tab, hotspot_callback_t hotspot_cb) {
   lv_obj_add_event_cb(brightness_slider, on_brightness, LV_EVENT_RELEASED, nullptr);
 
   brightness_label = lv_label_create(brightness_row);
-  lv_obj_set_style_text_font(brightness_label, &lv_font_montserrat_20, 0);
+  lv_obj_set_width(brightness_label, kSettingsSliderValueWidth);
+  lv_label_set_long_mode(brightness_label, LV_LABEL_LONG_CLIP);
+  lv_obj_set_style_text_font(brightness_label, &ui_font_24, 0);
   lv_obj_set_style_text_color(brightness_label, lv_color_white(), 0);
+  lv_obj_set_style_text_align(brightness_label, LV_TEXT_ALIGN_RIGHT, 0);
 
   static char bright_buf[16];
   snprintf(bright_buf, sizeof(bright_buf), "%d", current_brightness);
@@ -429,28 +441,28 @@ void build_settings_tab(lv_obj_t *tab, hotspot_callback_t hotspot_cb) {
   lv_label_set_text(wifi_status_label, "Status: " LV_SYMBOL_CLOSE " Nicht verbunden");
   lv_obj_set_width(wifi_status_label, LV_PCT(100));
   lv_label_set_long_mode(wifi_status_label, LV_LABEL_LONG_CLIP);
-  lv_obj_set_style_text_font(wifi_status_label, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(wifi_status_label, &ui_font_20, 0);
   lv_obj_set_style_text_color(wifi_status_label, lv_color_hex(0xFF6B6B), 0);
 
   wifi_ssid_label = lv_label_create(wifi_col_mid);
-  lv_label_set_text(wifi_ssid_label, "Netzwerk: ---");
+  lv_label_set_text(wifi_ssid_label, "SSID: ---");
   lv_obj_set_width(wifi_ssid_label, LV_PCT(100));
   lv_label_set_long_mode(wifi_ssid_label, LV_LABEL_LONG_CLIP);
-  lv_obj_set_style_text_font(wifi_ssid_label, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(wifi_ssid_label, &ui_font_20, 0);
   lv_obj_set_style_text_color(wifi_ssid_label, lv_color_hex(0xC8C8C8), 0);
 
   wifi_ip_label = lv_label_create(wifi_col_mid);
-  lv_label_set_text(wifi_ip_label, "IP-Adresse: ---");
+  lv_label_set_text(wifi_ip_label, "IP: ---");
   lv_obj_set_width(wifi_ip_label, LV_PCT(100));
   lv_label_set_long_mode(wifi_ip_label, LV_LABEL_LONG_CLIP);
-  lv_obj_set_style_text_font(wifi_ip_label, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(wifi_ip_label, &ui_font_20, 0);
   lv_obj_set_style_text_color(wifi_ip_label, lv_color_hex(0xC8C8C8), 0);
 
   mqtt_notice_label = lv_label_create(wifi_col_mid);
-  lv_label_set_text(mqtt_notice_label, LV_SYMBOL_WARNING " MQTT nicht konfiguriert");
+  lv_label_set_text(mqtt_notice_label, "MQTT nicht konfiguriert");
   lv_obj_set_width(mqtt_notice_label, LV_PCT(100));
   lv_label_set_long_mode(mqtt_notice_label, LV_LABEL_LONG_CLIP);
-  lv_obj_set_style_text_font(mqtt_notice_label, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(mqtt_notice_label, &ui_font_20, 0);
   lv_obj_set_style_text_color(mqtt_notice_label, lv_color_hex(0xFFC04D), 0);
   lv_obj_add_flag(mqtt_notice_label, LV_OBJ_FLAG_HIDDEN);
 
@@ -470,7 +482,7 @@ void build_settings_tab(lv_obj_t *tab, hotspot_callback_t hotspot_cb) {
 
   ap_mode_btn_label = lv_label_create(ap_mode_btn);
   lv_label_set_text(ap_mode_btn_label, "AP aktivieren");
-  lv_obj_set_style_text_font(ap_mode_btn_label, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(ap_mode_btn_label, &ui_font_24, 0);
   lv_obj_center(ap_mode_btn_label);
 
   ap_confirm_row = create_card_row(wifi_col_right);
@@ -489,8 +501,8 @@ void build_settings_tab(lv_obj_t *tab, hotspot_callback_t hotspot_cb) {
   lv_obj_set_style_radius(ap_confirm_yes_btn, 18, 0);
   lv_obj_add_event_cb(ap_confirm_yes_btn, on_confirm_yes_clicked, LV_EVENT_CLICKED, nullptr);
   lv_obj_t *ap_yes_label = lv_label_create(ap_confirm_yes_btn);
-  lv_label_set_text(ap_yes_label, "Bestaetigen");
-  lv_obj_set_style_text_font(ap_yes_label, &lv_font_montserrat_14, 0);
+  lv_label_set_text(ap_yes_label, "Best\u00e4tigen");
+  lv_obj_set_style_text_font(ap_yes_label, &ui_font_24, 0);
   lv_obj_center(ap_yes_label);
 
   ap_confirm_no_btn = lv_button_create(ap_confirm_row);
@@ -504,7 +516,7 @@ void build_settings_tab(lv_obj_t *tab, hotspot_callback_t hotspot_cb) {
   lv_obj_add_event_cb(ap_confirm_no_btn, on_confirm_no_clicked, LV_EVENT_CLICKED, nullptr);
   lv_obj_t *ap_no_label = lv_label_create(ap_confirm_no_btn);
   lv_label_set_text(ap_no_label, "Abbrechen");
-  lv_obj_set_style_text_font(ap_no_label, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(ap_no_label, &ui_font_24, 0);
   lv_obj_center(ap_no_label);
 
   // Sleep mains tile
@@ -525,7 +537,9 @@ void build_settings_tab(lv_obj_t *tab, hotspot_callback_t hotspot_cb) {
   lv_obj_t *sleep_row = create_slider_row(mains_col_right);
   sleep_label = lv_label_create(sleep_row);
   lv_label_set_text(sleep_label, "Auto-Sleep nach");
-  lv_obj_set_style_text_font(sleep_label, &lv_font_montserrat_20, 0);
+  lv_obj_set_width(sleep_label, kSettingsSliderLabelWidth);
+  lv_label_set_long_mode(sleep_label, LV_LABEL_LONG_CLIP);
+  lv_obj_set_style_text_font(sleep_label, &ui_font_24, 0);
   lv_obj_set_style_text_color(sleep_label, lv_color_white(), 0);
   sleep_slider = lv_slider_create(sleep_row);
   style_settings_slider(sleep_slider);
@@ -539,8 +553,11 @@ void build_settings_tab(lv_obj_t *tab, hotspot_callback_t hotspot_cb) {
   lv_obj_add_event_cb(sleep_slider, on_sleep_slider, LV_EVENT_RELEASED, nullptr);
 
   sleep_time_label = lv_label_create(sleep_row);
-  lv_obj_set_style_text_font(sleep_time_label, &lv_font_montserrat_20, 0);
+  lv_obj_set_width(sleep_time_label, kSettingsSliderValueWidth);
+  lv_label_set_long_mode(sleep_time_label, LV_LABEL_LONG_CLIP);
+  lv_obj_set_style_text_font(sleep_time_label, &ui_font_24, 0);
   lv_obj_set_style_text_color(sleep_time_label, lv_color_white(), 0);
+  lv_obj_set_style_text_align(sleep_time_label, LV_TEXT_ALIGN_RIGHT, 0);
 
   static char sleep_buf[16];
   format_sleep_label_for_index(sleep_buf, sizeof(sleep_buf), sleep_index);
@@ -560,14 +577,14 @@ void build_settings_tab(lv_obj_t *tab, hotspot_callback_t hotspot_cb) {
   lv_label_set_text(power_status_label, "Status: ---");
   lv_obj_set_width(power_status_label, LV_PCT(100));
   lv_label_set_long_mode(power_status_label, LV_LABEL_LONG_CLIP);
-  lv_obj_set_style_text_font(power_status_label, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(power_status_label, &ui_font_20, 0);
   lv_obj_set_style_text_color(power_status_label, lv_color_white(), 0);
 
   power_level_label = lv_label_create(battery_col_mid);
   lv_label_set_text(power_level_label, "Level: --%");
   lv_obj_set_width(power_level_label, LV_PCT(100));
   lv_label_set_long_mode(power_level_label, LV_LABEL_LONG_CLIP);
-  lv_obj_set_style_text_font(power_level_label, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(power_level_label, &ui_font_20, 0);
   lv_obj_set_style_text_color(power_level_label, lv_color_white(), 0);
 
   lv_obj_t *battery_col_right = create_settings_column(
@@ -578,7 +595,9 @@ void build_settings_tab(lv_obj_t *tab, hotspot_callback_t hotspot_cb) {
   lv_obj_t *sleep_battery_row = create_slider_row(battery_col_right);
   sleep_battery_label = lv_label_create(sleep_battery_row);
   lv_label_set_text(sleep_battery_label, "Auto-Sleep nach");
-  lv_obj_set_style_text_font(sleep_battery_label, &lv_font_montserrat_20, 0);
+  lv_obj_set_width(sleep_battery_label, kSettingsSliderLabelWidth);
+  lv_label_set_long_mode(sleep_battery_label, LV_LABEL_LONG_CLIP);
+  lv_obj_set_style_text_font(sleep_battery_label, &ui_font_24, 0);
   lv_obj_set_style_text_color(sleep_battery_label, lv_color_white(), 0);
   sleep_battery_slider = lv_slider_create(sleep_battery_row);
   style_settings_slider(sleep_battery_slider);
@@ -592,8 +611,11 @@ void build_settings_tab(lv_obj_t *tab, hotspot_callback_t hotspot_cb) {
   lv_obj_add_event_cb(sleep_battery_slider, on_sleep_battery_slider, LV_EVENT_RELEASED, nullptr);
 
   sleep_battery_time_label = lv_label_create(sleep_battery_row);
-  lv_obj_set_style_text_font(sleep_battery_time_label, &lv_font_montserrat_20, 0);
+  lv_obj_set_width(sleep_battery_time_label, kSettingsSliderValueWidth);
+  lv_label_set_long_mode(sleep_battery_time_label, LV_LABEL_LONG_CLIP);
+  lv_obj_set_style_text_font(sleep_battery_time_label, &ui_font_24, 0);
   lv_obj_set_style_text_color(sleep_battery_time_label, lv_color_white(), 0);
+  lv_obj_set_style_text_align(sleep_battery_time_label, LV_TEXT_ALIGN_RIGHT, 0);
 
   static char sleep_battery_buf[16];
   format_sleep_label_for_index(sleep_battery_buf, sizeof(sleep_battery_buf), sleep_battery_index);
@@ -610,24 +632,24 @@ void settings_update_wifi_status(bool connected, const char* ssid, const char* i
   static char buf[128];
 
   if (connected) {
-    lv_label_set_text(wifi_status_label, "Status: " LV_SYMBOL_OK " Verbunden");
+    lv_label_set_text(wifi_status_label, "Status: Verbunden");
     lv_obj_set_style_text_color(wifi_status_label, lv_color_hex(0x51CF66), 0);
 
-    snprintf(buf, sizeof(buf), "Netzwerk: %s", ssid ? ssid : "---");
+    snprintf(buf, sizeof(buf), "SSID: %s", ssid ? ssid : "---");
     lv_label_set_text(wifi_ssid_label, buf);
 
-    snprintf(buf, sizeof(buf), "IP-Adresse: %s", ip ? ip : "---");
+    snprintf(buf, sizeof(buf), "IP: %s", ip ? ip : "---");
     lv_label_set_text(wifi_ip_label, buf);
 
   } else {
-    lv_label_set_text(wifi_status_label, "Status: " LV_SYMBOL_CLOSE " Nicht verbunden");
+    lv_label_set_text(wifi_status_label, "Status: Offline");
     lv_obj_set_style_text_color(wifi_status_label, lv_color_hex(0xFF6B6B), 0);
-    lv_label_set_text(wifi_ssid_label, "Netzwerk: ---");
-    lv_label_set_text(wifi_ip_label, "IP-Adresse: ---");
+    lv_label_set_text(wifi_ssid_label, "SSID: ---");
+    lv_label_set_text(wifi_ip_label, "IP: ---");
   }
 }
 
-void settings_update_wifi_status_ap(const char* ssid, const char* ip) {
+void settings_update_wifi_status_ap(const char* ssid, const char* password) {
   if (!wifi_status_label || !wifi_ssid_label || !wifi_ip_label) return;
 
   if (mqtt_notice_label) lv_obj_add_flag(mqtt_notice_label, LV_OBJ_FLAG_HIDDEN);
@@ -638,10 +660,10 @@ void settings_update_wifi_status_ap(const char* ssid, const char* ip) {
   lv_obj_set_style_text_color(wifi_status_label, lv_color_hex(0xFFC04D), 0);
 
   static char buf[128];
-  snprintf(buf, sizeof(buf), "Netzwerk: %s", ssid ? ssid : "Tab5_Config");
+  snprintf(buf, sizeof(buf), "SSID: %s", ssid ? ssid : "Tab5_Config");
   lv_label_set_text(wifi_ssid_label, buf);
 
-  snprintf(buf, sizeof(buf), "IP-Adresse: %s", ip ? ip : "192.168.4.1");
+  snprintf(buf, sizeof(buf), "Passwort: %s", password ? password : "12345678");
   lv_label_set_text(wifi_ip_label, buf);
 }
 
