@@ -173,6 +173,9 @@ void appendAdminStyles(String& html) {
       margin-left:-15px;
       margin-top:9px;
     }
+    .tile-value.sensor-value-size-default { font-size:28px; }
+    .tile-value.sensor-value-size-24 { font-size:24px; }
+    .tile-value.sensor-value-size-20 { font-size:20px; }
     .tile-unit { color:#e6e6e6; font-size:14px; opacity:0.95; margin-left:7px; }
 
     /* Tile Icons (MDI) */

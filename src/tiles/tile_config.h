@@ -24,6 +24,7 @@ struct Tile {
   String sensor_entity;      // HA Entity ID (z.B. "sensor.temperature")
   String sensor_unit;        // Einheit (z.B. "°C")
   uint8_t sensor_decimals;   // Nachkommastellen (0xFF = unverändert)
+  uint8_t sensor_value_font; // 0=Standard, 1=20, 2=24
 
   // Scene-spezifisch
   String scene_alias;        // HA Scene Alias
@@ -37,6 +38,7 @@ struct Tile {
       : type(TILE_EMPTY),
         bg_color(0),
         sensor_decimals(0xFF),  // 0xFF = keine Rundung, Originalwert anzeigen
+        sensor_value_font(0),
         key_code(0),
         key_modifier(0) {}
 };

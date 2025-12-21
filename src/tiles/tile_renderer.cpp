@@ -114,6 +114,17 @@ static uint8_t get_sensor_decimals(GridType grid_type, uint8_t grid_index) {
   return grid.tiles[grid_index].sensor_decimals;
 }
 
+static const lv_font_t* get_sensor_value_font(const Tile& tile) {
+  switch (tile.sensor_value_font) {
+    case 1:
+      return &ui_font_20;
+    case 2:
+      return &ui_font_24;
+    default:
+      return FONT_VALUE;
+  }
+}
+
 static bool apply_decimals(String& value, uint8_t decimals) {
   if (decimals == 0xFF) return false;  // Keine Rundung gewuenscht
   String normalized = value;
@@ -599,7 +610,7 @@ lv_obj_t* render_sensor_tile(lv_obj_t* parent, int col, int row, const Tile& til
     Serial.println("[TileRenderer] ERROR: Konnte Value-Label nicht erstellen");
     return card;
   }
-  set_label_style(v, lv_color_white(), FONT_VALUE);
+  set_label_style(v, lv_color_white(), get_sensor_value_font(tile));
   lv_label_set_text(v, "--");
   lv_obj_align(v, LV_ALIGN_CENTER, 0, 28);  // Nach unten verschoben (war 18)
 

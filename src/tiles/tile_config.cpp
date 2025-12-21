@@ -3,7 +3,7 @@
 #include <string.h>
 
 static const char* PREF_NAMESPACE = "tab5_tiles";
-static constexpr uint8_t PACKED_GRID_VERSION = 1;
+static constexpr uint8_t PACKED_GRID_VERSION = 2;
 
 // Feste Längen für gepackte Strings (inkl. Nullterminator)
 static constexpr size_t TITLE_MAX     = 32;
@@ -12,6 +12,26 @@ static constexpr size_t ENTITY_MAX    = 64;
 static constexpr size_t UNIT_MAX      = 16;
 static constexpr size_t SCENE_MAX     = 32;
 static constexpr size_t MACRO_MAX     = 32;
+
+struct PackedTileV1 {
+  uint8_t type;
+  uint8_t sensor_decimals;
+  uint8_t key_code;
+  uint8_t key_modifier;
+  uint32_t bg_color;
+  char title[TITLE_MAX];
+  char icon_name[ICON_MAX];        // MDI Icon Name
+  char sensor_entity[ENTITY_MAX];
+  char sensor_unit[UNIT_MAX];
+  char scene_alias[SCENE_MAX];
+  char key_macro[MACRO_MAX];
+};
+
+struct PackedGridV1 {
+  uint8_t version;
+  uint8_t reserved[3];  // Alignment / future use
+  PackedTileV1 tiles[TILES_PER_GRID];
+};
 
 struct PackedTile {
   uint8_t type;
@@ -25,6 +45,8 @@ struct PackedTile {
   char sensor_unit[UNIT_MAX];
   char scene_alias[SCENE_MAX];
   char key_macro[MACRO_MAX];
+  uint8_t sensor_value_font;
+  uint8_t reserved[3];             // Alignment / future use
 };
 
 struct PackedGrid {
@@ -52,6 +74,11 @@ static uint8_t clampDecimals(uint8_t val) {
   return val;
 }
 
+static uint8_t clampSensorValueFont(uint8_t val) {
+  if (val > 2) return 0;
+  return val;
+}
+
 static void packTile(const Tile& in, PackedTile& out) {
   memset(&out, 0, sizeof(out));
   out.type = static_cast<uint8_t>(in.type);
@@ -59,6 +86,7 @@ static void packTile(const Tile& in, PackedTile& out) {
   out.key_code = in.key_code;
   out.key_modifier = in.key_modifier;
   out.bg_color = in.bg_color;
+  out.sensor_value_font = clampSensorValueFont(in.sensor_value_font);
   copyString(in.title, out.title, sizeof(out.title));
   copyString(in.icon_name, out.icon_name, sizeof(out.icon_name));
   copyString(in.sensor_entity, out.sensor_entity, sizeof(out.sensor_entity));
@@ -71,6 +99,7 @@ static void unpackTile(const PackedTile& in, Tile& out) {
   out.type = static_cast<TileType>(in.type);
   out.bg_color = in.bg_color;
   out.sensor_decimals = clampDecimals(in.sensor_decimals);
+  out.sensor_value_font = clampSensorValueFont(in.sensor_value_font);
   out.key_code = in.key_code;
   out.key_modifier = in.key_modifier;
   out.title = String(in.title);
@@ -81,6 +110,20 @@ static void unpackTile(const PackedTile& in, Tile& out) {
   out.key_macro = String(in.key_macro);
 }
 
+static void unpackTileV1(const PackedTileV1& in, Tile& out) {
+  out.type = static_cast<TileType>(in.type);
+  out.bg_color = in.bg_color;
+  out.sensor_decimals = clampDecimals(in.sensor_decimals);
+  out.sensor_value_font = 0;
+  out.key_code = in.key_code;
+  out.key_modifier = in.key_modifier;
+  out.title = String(in.title);
+  out.icon_name = String(in.icon_name);
+  out.sensor_entity = String(in.sensor_entity);
+  out.sensor_unit = String(in.sensor_unit);
+  out.scene_alias = String(in.scene_alias);
+  out.key_macro = String(in.key_macro);
+}
 static bool buildBlobKey(const char* prefix, char* out, size_t out_len) {
   if (!prefix || !out || out_len < 8) return false;
   int written = snprintf(out, out_len, "%s_blob", prefix);
@@ -114,6 +157,7 @@ static bool loadGridLegacy(const char* prefix, TileGridConfig& grid) {
 
     snprintf(key, sizeof(key), "%s_t%u_prec", prefix, static_cast<unsigned>(i));
     grid.tiles[i].sensor_decimals = clampDecimals(prefs.getUChar(key, 0xFF));
+    grid.tiles[i].sensor_value_font = 0;
 
     snprintf(key, sizeof(key), "%s_t%u_scene", prefix, static_cast<unsigned>(i));
     grid.tiles[i].scene_alias = prefs.getString(key, "");
@@ -260,20 +304,36 @@ bool TileConfig::loadGrid(const char* prefix, TileGridConfig& grid) {
     Preferences prefs;
     if (prefs.begin(PREF_NAMESPACE, true)) {
       size_t blob_len = prefs.getBytesLength(blob_key);
+
       if (blob_len >= sizeof(PackedGrid)) {
         PackedGrid packed{};
         size_t read = prefs.getBytes(blob_key, &packed, sizeof(packed));
-        prefs.end();
         if (read == sizeof(packed) && packed.version == PACKED_GRID_VERSION) {
           for (size_t i = 0; i < TILES_PER_GRID; ++i) {
             unpackTile(packed.tiles[i], grid.tiles[i]);
           }
-          Serial.printf("[TileConfig] Grid '%s' geladen (blob)\n", prefix);
+          prefs.end();
+          Serial.printf("[TileConfig] Grid '%s' geladen (blob v%u)\n",
+                        prefix, static_cast<unsigned>(packed.version));
           return true;
         }
-      } else {
-        prefs.end();
       }
+
+      if (blob_len >= sizeof(PackedGridV1)) {
+        PackedGridV1 packed{};
+        size_t read = prefs.getBytes(blob_key, &packed, sizeof(packed));
+        if (read == sizeof(packed) && packed.version == 1) {
+          for (size_t i = 0; i < TILES_PER_GRID; ++i) {
+            unpackTileV1(packed.tiles[i], grid.tiles[i]);
+          }
+          prefs.end();
+          Serial.printf("[TileConfig] Grid '%s' geladen (blob v1)\n", prefix);
+          saveGrid(prefix, grid);  // Migration auf neues Format
+          return true;
+        }
+      }
+
+      prefs.end();
     }
   }
 

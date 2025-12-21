@@ -259,10 +259,18 @@ static void appendTileTabHTML(
               <input type="text" id=")html";
   html += tab_id;
   html += R"html(_sensor_unit" placeholder="z.B. °C">
-              <label>Nachkommastellen (leer = Originalwert)</label>
-              <input type="number" id=")html";
-  html += tab_id;
-  html += R"html(_sensor_decimals" min="0" max="6" step="1" placeholder="z.B. 1">
+                <label>Nachkommastellen (leer = Originalwert)</label>
+                <input type="number" id=")html";
+    html += tab_id;
+    html += R"html(_sensor_decimals" min="0" max="6" step="1" placeholder="z.B. 1">
+                <label>Wert-Groesse</label>
+                <select id=")html";
+    html += tab_id;
+    html += R"html(_sensor_value_font">
+                  <option value="0">Standard</option>
+                  <option value="1">20</option>
+                  <option value="2">24</option>
+                </select>
             </div>
 
             <!-- Scene Fields -->

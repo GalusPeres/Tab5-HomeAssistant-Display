@@ -319,6 +319,8 @@ void WebAdminServer::handleGetTiles() {
     json += tile.sensor_unit;
     json += "\",\"sensor_decimals\":";
     json += String(tile.sensor_decimals == 0xFF ? -1 : (int)tile.sensor_decimals);
+    json += ",\"sensor_value_font\":";
+    json += String(tile.sensor_value_font);
     json += ",\"scene_alias\":\"";
     json += tile.scene_alias;
     json += "\",\"key_macro\":\"";
@@ -352,6 +354,8 @@ void WebAdminServer::handleGetTiles() {
     json += tile.sensor_unit;
     json += "\",\"sensor_decimals\":";
     json += String(tile.sensor_decimals == 0xFF ? -1 : (int)tile.sensor_decimals);
+    json += ",\"sensor_value_font\":";
+    json += String(tile.sensor_value_font);
     json += ",\"scene_alias\":\"";
     json += tile.scene_alias;
     json += "\",\"key_macro\":\"";
@@ -414,12 +418,20 @@ void WebAdminServer::handleSaveTiles() {
       }
     }
     tile.sensor_decimals = decimals;
+    uint8_t value_font = 0;
+    if (server.hasArg("sensor_value_font")) {
+      int raw = server.arg("sensor_value_font").toInt();
+      value_font = (raw == 1 || raw == 2) ? static_cast<uint8_t>(raw) : 0;
+    }
+    tile.sensor_value_font = value_font;
   } else if (type == TILE_SCENE) {
     tile.scene_alias = server.hasArg("scene_alias") ? server.arg("scene_alias") : "";
     tile.sensor_decimals = 0xFF;
+    tile.sensor_value_font = 0;
   } else if (type == TILE_KEY) {
     tile.key_macro = server.hasArg("key_macro") ? server.arg("key_macro") : "";
     tile.sensor_decimals = 0xFF;
+    tile.sensor_value_font = 0;
 
     // Parse macro to key_code and modifier
     String macro = tile.key_macro;
@@ -454,6 +466,7 @@ void WebAdminServer::handleSaveTiles() {
     int targetValue = argValue.toInt();
     Serial.printf("[DEBUG] Navigate Backend - hasArg=%d, argValue='%s', targetValue=%d\n", hasArg, argValue.c_str(), targetValue);
     tile.sensor_decimals = hasArg ? targetValue : 0;
+    tile.sensor_value_font = 0;
   } else if (type == TILE_SWITCH) {
     // Element-Pool: sensor_entity = target entity for switch/light
     tile.sensor_entity = server.hasArg("switch_entity") ? server.arg("switch_entity") : "";
@@ -463,8 +476,10 @@ void WebAdminServer::handleSaveTiles() {
       style = (raw == 1) ? 1 : 0;
     }
     tile.sensor_decimals = style;
+    tile.sensor_value_font = 0;
   } else {
     tile.sensor_decimals = 0xFF;
+    tile.sensor_value_font = 0;
   }
 
   // Save to NVS (nur das betroffene Grid)

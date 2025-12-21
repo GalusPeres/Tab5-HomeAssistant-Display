@@ -208,6 +208,7 @@ void appendAdminScripts(String& html) {
       sensor_entity: document.getElementById(prefix + '_sensor_entity')?.value || '',
       sensor_unit: document.getElementById(prefix + '_sensor_unit')?.value || '',
       sensor_decimals: document.getElementById(prefix + '_sensor_decimals')?.value || '',
+      sensor_value_font: document.getElementById(prefix + '_sensor_value_font')?.value || '0',
       scene_alias: document.getElementById(prefix + '_scene_alias')?.value || '',
       key_macro: document.getElementById(prefix + '_key_macro')?.value || '',
       navigate_target: document.getElementById(prefix + '_navigate_target')?.value || '0',
@@ -232,6 +233,8 @@ void appendAdminScripts(String& html) {
       document.getElementById(prefix + '_sensor_unit').value = d.sensor_unit || '';
       const decEl = document.getElementById(prefix + '_sensor_decimals');
       if (decEl) decEl.value = d.sensor_decimals || '';
+      const fontEl = document.getElementById(prefix + '_sensor_value_font');
+      if (fontEl) fontEl.value = d.sensor_value_font || '0';
     } else if (d.type === '2') {
       document.getElementById(prefix + '_scene_alias').value = d.scene_alias || '';
     } else if (d.type === '3') {
@@ -269,6 +272,7 @@ void appendAdminScripts(String& html) {
       sensor_entity: document.getElementById(prefix + '_sensor_entity')?.value || '',
       sensor_unit: document.getElementById(prefix + '_sensor_unit')?.value || '',
       sensor_decimals: document.getElementById(prefix + '_sensor_decimals')?.value || '',
+      sensor_value_font: document.getElementById(prefix + '_sensor_value_font')?.value || '0',
       scene_alias: document.getElementById(prefix + '_scene_alias')?.value || '',
       key_macro: document.getElementById(prefix + '_key_macro')?.value || '',
       navigate_target: document.getElementById(prefix + '_navigate_target')?.value || '0',
@@ -298,6 +302,8 @@ void appendAdminScripts(String& html) {
     if (sensorUnitEl) sensorUnitEl.value = data.sensor_unit || '';
     const sensorDecEl = document.getElementById(prefix + '_sensor_decimals');
     if (sensorDecEl) sensorDecEl.value = data.sensor_decimals || '';
+    const sensorFontEl = document.getElementById(prefix + '_sensor_value_font');
+    if (sensorFontEl) sensorFontEl.value = data.sensor_value_font || '0';
 
     const sceneEl = document.getElementById(prefix + '_scene_alias');
     if (sceneEl) sceneEl.value = data.scene_alias || '';
@@ -410,10 +416,10 @@ void appendAdminScripts(String& html) {
 
   function setupLivePreview(tab) {
     const prefix = tab;
-    const fields = [
-      '_tile_title','_tile_color','_tile_type','_sensor_entity','_sensor_unit',
-      '_sensor_decimals','_scene_alias','_key_macro','_navigate_target','_switch_entity','_switch_style'
-    ];
+      const fields = [
+        '_tile_title','_tile_color','_tile_type','_sensor_entity','_sensor_unit',
+        '_sensor_decimals','_sensor_value_font','_scene_alias','_key_macro','_navigate_target','_switch_entity','_switch_style'
+      ];
     fields.forEach(id => {
       const el = document.getElementById(prefix + id);
       if (el) el.replaceWith(el.cloneNode(true));
@@ -423,10 +429,11 @@ void appendAdminScripts(String& html) {
     const iconInput = document.getElementById(prefix + '_tile_icon');
     const colorInput = document.getElementById(prefix + '_tile_color');
     const typeSelect = document.getElementById(prefix + '_tile_type');
-    const entitySelect = document.getElementById(prefix + '_sensor_entity');
-    const unitInput = document.getElementById(prefix + '_sensor_unit');
-    const decimalsInput = document.getElementById(prefix + '_sensor_decimals');
-    const sceneInput = document.getElementById(prefix + '_scene_alias');
+      const entitySelect = document.getElementById(prefix + '_sensor_entity');
+      const unitInput = document.getElementById(prefix + '_sensor_unit');
+      const decimalsInput = document.getElementById(prefix + '_sensor_decimals');
+      const valueFontSelect = document.getElementById(prefix + '_sensor_value_font');
+      const sceneInput = document.getElementById(prefix + '_scene_alias');
     const keyInput = document.getElementById(prefix + '_key_macro');
     const navigateSelect = document.getElementById(prefix + '_navigate_target');
     const switchSelect = document.getElementById(prefix + '_switch_entity');
@@ -437,8 +444,9 @@ void appendAdminScripts(String& html) {
     if (colorInput) colorInput.addEventListener('input', () => { updateTilePreview(tab); updateDraft(tab); scheduleAutoSave(tab); });
     if (typeSelect) typeSelect.addEventListener('change', () => { updateTilePreview(tab); updateDraft(tab); scheduleAutoSave(tab); });
     if (entitySelect) entitySelect.addEventListener('change', () => { maybeFillTitleFromSensor(tab); updateTilePreview(tab); updateSensorValuePreview(tab); updateDraft(tab); scheduleAutoSave(tab); });
-    if (unitInput) unitInput.addEventListener('input', () => { updateSensorValuePreview(tab); updateDraft(tab); scheduleAutoSave(tab); });
-    if (decimalsInput) decimalsInput.addEventListener('input', () => { updateSensorValuePreview(tab); updateDraft(tab); scheduleAutoSave(tab); });
+      if (unitInput) unitInput.addEventListener('input', () => { updateSensorValuePreview(tab); updateDraft(tab); scheduleAutoSave(tab); });
+      if (decimalsInput) decimalsInput.addEventListener('input', () => { updateSensorValuePreview(tab); updateDraft(tab); scheduleAutoSave(tab); });
+      if (valueFontSelect) valueFontSelect.addEventListener('change', () => { updateTilePreview(tab); updateDraft(tab); scheduleAutoSave(tab); });
     if (sceneInput) sceneInput.addEventListener('input', () => { maybeFillTitleFromScene(tab); updateTilePreview(tab); updateDraft(tab); scheduleAutoSave(tab); });
     if (keyInput) keyInput.addEventListener('input', () => { updateTilePreview(tab); updateDraft(tab); scheduleAutoSave(tab); });
     if (navigateSelect) navigateSelect.addEventListener('change', () => { updateTilePreview(tab); updateDraft(tab); scheduleAutoSave(tab); });
@@ -602,6 +610,7 @@ void appendAdminScripts(String& html) {
     const entitySelect = document.getElementById(prefix + '_sensor_entity');
     const unitInput = document.getElementById(prefix + '_sensor_unit');
     const decimalsInput = document.getElementById(prefix + '_sensor_decimals');
+    const valueFontSelect = document.getElementById(prefix + '_sensor_value_font');
     if (!entitySelect) return;
     const entity = entitySelect.value;
     if (!entity) {
@@ -609,6 +618,7 @@ void appendAdminScripts(String& html) {
       if (valueElem) {
         const unit = unitInput ? unitInput.value : '';
         valueElem.innerHTML = '--' + (unit ? '<span class="tile-unit">' + unit + '</span>' : '');
+        applySensorValueFontClass(valueElem, valueFontSelect ? valueFontSelect.value : '0');
       }
       return;
     }
@@ -621,6 +631,7 @@ void appendAdminScripts(String& html) {
           let value = formatSensorValue(values[entity] ?? '--', decimals);
           const unit = unitInput ? unitInput.value : '';
           valueElem.innerHTML = value + (unit ? '<span class="tile-unit">' + unit + '</span>' : '');
+          applySensorValueFontClass(valueElem, valueFontSelect ? valueFontSelect.value : '0');
         }
       })
       .catch(err => console.error('Fehler beim Laden des Sensorwerts:', err));
@@ -643,6 +654,24 @@ void appendAdminScripts(String& html) {
       .catch(err => console.error('Fehler beim Laden des Switch-Status:', err));
   }
 
+  function normalizeSensorValueFont(value) {
+    const v = String(value || '0');
+    return (v === '1' || v === '2') ? v : '0';
+  }
+
+  function getSensorValueFontClass(value) {
+    const v = normalizeSensorValueFont(value);
+    if (v === '1') return 'sensor-value-size-20';
+    if (v === '2') return 'sensor-value-size-24';
+    return 'sensor-value-size-default';
+  }
+
+  function applySensorValueFontClass(el, value) {
+    if (!el) return;
+    el.classList.remove('sensor-value-size-20', 'sensor-value-size-24', 'sensor-value-size-default');
+    el.classList.add(getSensorValueFontClass(value));
+  }
+
   function updateTilePreview(tab) {
     if (currentTileIndex === -1) return;
     const prefix = tab;
@@ -661,6 +690,8 @@ void appendAdminScripts(String& html) {
     const type = document.getElementById(prefix + '_tile_type').value;
     const iconInput = document.getElementById(prefix + '_tile_icon');
     const switchStyle = document.getElementById(prefix + '_switch_style')?.value || '0';
+    const sensorValueFont = document.getElementById(prefix + '_sensor_value_font')?.value || '0';
+    const sensorValueClass = getSensorValueFontClass(sensorValueFont);
     let iconName = iconInput ? iconInput.value.trim().toLowerCase() : '';
 
     // Normalize icon name (remove mdi: or mdi- prefix)
@@ -705,16 +736,16 @@ void appendAdminScripts(String& html) {
       html += '<div class="tile-title" id="' + tileId + '-title">' + title + '</div>';
     }
 
-    if (type === '1') {
-      const entitySelect = document.getElementById(prefix + '_sensor_entity');
-      const unitInput = document.getElementById(prefix + '_sensor_unit');
-      const entity = entitySelect ? entitySelect.value : '';
-      const unit = unitInput ? unitInput.value : '';
-      html += '<div class="tile-value" id="' + tileId + '-value">--';
-      if (unit) html += '<span class="tile-unit">' + unit + '</span>';
-      html += '</div>';
-      if (entity) {
-        tileElem.innerHTML = html;
+      if (type === '1') {
+        const entitySelect = document.getElementById(prefix + '_sensor_entity');
+        const unitInput = document.getElementById(prefix + '_sensor_unit');
+        const entity = entitySelect ? entitySelect.value : '';
+        const unit = unitInput ? unitInput.value : '';
+        html += '<div class="tile-value ' + sensorValueClass + '" id="' + tileId + '-value">--';
+        if (unit) html += '<span class="tile-unit">' + unit + '</span>';
+        html += '</div>';
+        if (entity) {
+          tileElem.innerHTML = html;
         if (wasActive) tileElem.classList.add('active');
         updateSensorValuePreview(tab);
         return;
@@ -745,12 +776,14 @@ void appendAdminScripts(String& html) {
         document.getElementById(prefix + '_tile_title').value = data.title || '';
         document.getElementById(prefix + '_tile_icon').value = data.icon_name || '';
         document.getElementById(prefix + '_tile_color').value = rgbToHex(data.bg_color || 0x2A2A2A);
-        if (data.type === 1) {
-          document.getElementById(prefix + '_sensor_entity').value = data.sensor_entity || '';
-          document.getElementById(prefix + '_sensor_unit').value = data.sensor_unit || '';
-          const decEl = document.getElementById(prefix + '_sensor_decimals');
-          if (decEl) decEl.value = (data.sensor_decimals !== undefined && data.sensor_decimals >= 0) ? data.sensor_decimals : '';
-        } else if (data.type === 2) {
+      if (data.type === 1) {
+        document.getElementById(prefix + '_sensor_entity').value = data.sensor_entity || '';
+        document.getElementById(prefix + '_sensor_unit').value = data.sensor_unit || '';
+        const decEl = document.getElementById(prefix + '_sensor_decimals');
+        if (decEl) decEl.value = (data.sensor_decimals !== undefined && data.sensor_decimals >= 0) ? data.sensor_decimals : '';
+        const fontEl = document.getElementById(prefix + '_sensor_value_font');
+        if (fontEl) fontEl.value = (data.sensor_value_font !== undefined) ? String(data.sensor_value_font) : '0';
+      } else if (data.type === 2) {
           document.getElementById(prefix + '_scene_alias').value = data.scene_alias || '';
           maybeFillTitleFromScene(tab);
         } else if (data.type === 3) {
@@ -763,8 +796,10 @@ void appendAdminScripts(String& html) {
           const styleEl = document.getElementById(prefix + '_switch_style');
           if (styleEl) styleEl.value = (data.switch_style !== undefined) ? String(data.switch_style) : '0';
         }
-        const decEl = document.getElementById(prefix + '_sensor_decimals');
-        if (data.type !== 1 && decEl) decEl.value = '';
+      const decEl = document.getElementById(prefix + '_sensor_decimals');
+      if (data.type !== 1 && decEl) decEl.value = '';
+      const fontEl = document.getElementById(prefix + '_sensor_value_font');
+      if (data.type !== 1 && fontEl) fontEl.value = '0';
         const tileElem = document.getElementById(tab + '-tile-' + index);
         if (tileElem) tileElem.classList.add('active');
         const draft = (drafts[tab] || {})[index];
@@ -809,9 +844,9 @@ void appendAdminScripts(String& html) {
     document.getElementById(prefix + '_tile_title').value = '';
     document.getElementById(prefix + '_tile_icon').value = '';
     document.getElementById(prefix + '_tile_color').value = '#2A2A2A';
-    ['_sensor_entity','_sensor_unit','_sensor_decimals','_scene_alias','_key_macro','_switch_entity','_switch_style'].forEach(suf => {
+    ['_sensor_entity','_sensor_unit','_sensor_decimals','_sensor_value_font','_scene_alias','_key_macro','_switch_entity','_switch_style'].forEach(suf => {
       const el = document.getElementById(prefix + suf);
-      if (el) el.value = (suf === '_switch_style') ? '0' : '';
+      if (el) el.value = (suf === '_switch_style' || suf === '_sensor_value_font') ? '0' : '';
     });
     updateTileType(tab);
     updateTilePreview(tab);
@@ -830,11 +865,12 @@ void appendAdminScripts(String& html) {
     formData.append('icon_name', document.getElementById(prefix + '_tile_icon').value);
     formData.append('bg_color', hexToRgb(document.getElementById(prefix + '_tile_color').value));
     const typeValue = document.getElementById(prefix + '_tile_type').value;
-    if (typeValue === '1') {
-      formData.append('sensor_entity', document.getElementById(prefix + '_sensor_entity').value);
-      formData.append('sensor_unit', document.getElementById(prefix + '_sensor_unit').value);
-      formData.append('sensor_decimals', document.getElementById(prefix + '_sensor_decimals').value);
-    } else if (typeValue === '2') {
+      if (typeValue === '1') {
+        formData.append('sensor_entity', document.getElementById(prefix + '_sensor_entity').value);
+        formData.append('sensor_unit', document.getElementById(prefix + '_sensor_unit').value);
+        formData.append('sensor_decimals', document.getElementById(prefix + '_sensor_decimals').value);
+        formData.append('sensor_value_font', document.getElementById(prefix + '_sensor_value_font').value);
+      } else if (typeValue === '2') {
       formData.append('scene_alias', document.getElementById(prefix + '_scene_alias').value);
     } else if (typeValue === '3') {
       formData.append('key_macro', document.getElementById(prefix + '_key_macro').value);
@@ -882,8 +918,9 @@ void appendAdminScripts(String& html) {
     if (tile.type === 0) el.style.background = 'transparent';
     else if (tile.type === 1) el.style.background = tile.bg_color ? ('#' + ('000000' + tile.bg_color.toString(16)).slice(-6)) : '#2A2A2A';
     else el.style.background = tile.bg_color ? ('#' + ('000000' + tile.bg_color.toString(16)).slice(-6)) : '#353535';
-    if (tile.type === 0) { el.innerHTML = ''; }
-    else {
+      const sensorValueClass = getSensorValueFontClass(tile.sensor_value_font);
+      if (tile.type === 0) { el.innerHTML = ''; }
+      else {
       // Icon (optional) - normalize icon name
       let iconName = (tile.icon_name || '').trim().toLowerCase();
       if (iconName.startsWith('mdi:')) iconName = iconName.substring(4);
@@ -906,7 +943,7 @@ void appendAdminScripts(String& html) {
         let value = '--';
         if (tile.sensor_entity) value = formatSensorValue(sensorValues[tile.sensor_entity] ?? '--', tile.sensor_decimals);
         const unit = tile.sensor_unit || '';
-        html += '<div class="tile-value" id="' + tab + '-tile-' + index + '-value">' + value + (unit ? '<span class="tile-unit">' + unit + '</span>' : '') + '</div>';
+        html += '<div class="tile-value ' + sensorValueClass + '" id="' + tab + '-tile-' + index + '-value">' + value + (unit ? '<span class="tile-unit">' + unit + '</span>' : '') + '</div>';
       }
       if (tile.type === 5 && tile.switch_style === 1) {
         html += '<div class="tile-switch" id="' + tab + '-tile-' + index + '-switch"><div class="tile-switch-knob"></div></div>';
