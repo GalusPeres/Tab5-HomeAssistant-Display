@@ -564,3 +564,23 @@ void update_light_popup(const LightPopupInit& init) {
   }
   apply_init_to_context(g_light_popup_ctx, init);
 }
+
+void preload_light_popup() {
+  if (g_light_popup_ctx && g_light_popup_ctx->overlay && g_light_popup_ctx->card) return;
+
+  LightPopupInit init;
+  init.entity_id = "__preload__";
+  init.title = "";
+  init.icon_name = "lightbulb";
+  init.is_light = true;
+  init.supports_color = true;
+  init.supports_brightness = true;
+  init.has_state = true;
+  init.is_on = false;
+
+  show_light_popup(init);
+  if (g_light_popup_ctx && g_light_popup_ctx->card && g_light_popup_ctx->overlay) {
+    lv_obj_add_flag(g_light_popup_ctx->card, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(g_light_popup_ctx->overlay, LV_OBJ_FLAG_CLICKABLE);
+  }
+}

@@ -2,6 +2,7 @@
 
 #include "src/ui/tab_tiles_unified.h"
 #include "src/ui/tab_settings.h"
+#include "src/ui/light_popup.h"
 #include "src/core/display_manager.h"
 #include "src/tiles/mdi_icons.h"
 #include "src/tiles/tile_config.h"
@@ -133,6 +134,15 @@ void UIManager::buildUI(scene_publish_cb_t scene_cb, hotspot_start_cb_t hotspot_
       lv_obj_add_flag(tab_panels[i], LV_OBJ_FLAG_HIDDEN);
     }
   }
+  switchToTab(0);
+
+  // Preload hidden tabs and popup so first use is instant.
+  tiles_reload_layout(GridType::TAB1);
+  tiles_reload_layout(GridType::TAB2);
+  preload_light_popup();
+
+  // Warm settings buffer once to reduce the first-open hitch.
+  switchToTab(3);
   switchToTab(0);
 
   Serial.println("[UI] UI aufgebaut");
