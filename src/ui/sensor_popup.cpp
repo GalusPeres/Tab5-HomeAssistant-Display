@@ -11,13 +11,13 @@ namespace {
 constexpr int kCardWidth = 760;
 constexpr int kCardHeight = 420;
 constexpr int kCardPad = 20;
-constexpr int kHeaderPadTop = 6;
+constexpr int kHeaderPadTop = 4;
 constexpr int kHeaderIconOffsetX = 4;
 constexpr int kHeaderIconOffsetY = -8;
-constexpr int kContentPadTop = 96;
-constexpr int kContentRowGap = 12;
-constexpr int kChartHeight = 230;
-constexpr int kChartLineWidth = 3;
+constexpr int kContentPadTop = 85;
+constexpr int kContentRowGap = 35;
+constexpr int kChartHeight = 190;
+constexpr int kChartLineWidth = 4;
 constexpr int kHistoryPointsDefault = 288;
 
 struct SensorPopupContext {
@@ -51,10 +51,10 @@ static PendingValueUpdate g_pending_value;
 static PendingHistoryUpdate g_pending_history;
 
 static const lv_font_t* get_value_font() {
-#if defined(LV_FONT_MONTSERRAT_48) && LV_FONT_MONTSERRAT_48
-  return &lv_font_montserrat_48;
-#elif defined(LV_FONT_MONTSERRAT_40) && LV_FONT_MONTSERRAT_40
+#if defined(LV_FONT_MONTSERRAT_40) && LV_FONT_MONTSERRAT_40
   return &lv_font_montserrat_40;
+#elif defined(LV_FONT_MONTSERRAT_48) && LV_FONT_MONTSERRAT_48
+  return &lv_font_montserrat_48;
 #else
   return LV_FONT_DEFAULT;
 #endif
@@ -297,6 +297,7 @@ static void build_popup_ui(SensorPopupContext* ctx, const SensorPopupInit& init)
   lv_obj_t* icon = lv_label_create(card);
   ctx->icon_label = icon;
   lv_obj_set_style_text_font(icon, FONT_MDI_ICONS, 0);
+  lv_obj_set_style_text_color(icon, lv_color_white(), 0);
   lv_obj_align(icon, LV_ALIGN_TOP_RIGHT, kHeaderIconOffsetX, kHeaderIconOffsetY);
 
   lv_obj_t* content = lv_obj_create(card);
@@ -313,6 +314,8 @@ static void build_popup_ui(SensorPopupContext* ctx, const SensorPopupInit& init)
   lv_obj_t* value = lv_label_create(content);
   ctx->value_label = value;
   set_label_style(value, lv_color_white(), get_value_font());
+  lv_obj_set_style_text_align(value, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_width(value, LV_PCT(100));
 
   lv_obj_t* chart = lv_chart_create(content);
   ctx->chart = chart;
@@ -327,6 +330,7 @@ static void build_popup_ui(SensorPopupContext* ctx, const SensorPopupInit& init)
   lv_obj_set_style_line_width(chart, kChartLineWidth, LV_PART_ITEMS);
   lv_obj_set_style_line_color(chart, lv_color_white(), LV_PART_ITEMS);
   lv_obj_set_style_line_rounded(chart, true, LV_PART_ITEMS);
+  lv_obj_set_style_size(chart, 0, 0, LV_PART_INDICATOR);
 
   ctx->series = lv_chart_add_series(chart, lv_color_white(), LV_CHART_AXIS_PRIMARY_Y);
   clear_chart(ctx, kHistoryPointsDefault);
@@ -348,6 +352,7 @@ void show_sensor_popup(const SensorPopupInit& init) {
 
   if (g_sensor_popup_ctx && g_sensor_popup_ctx->overlay && g_sensor_popup_ctx->card) {
     apply_init_to_context(g_sensor_popup_ctx, init);
+    clear_chart(g_sensor_popup_ctx, kHistoryPointsDefault);
     lv_obj_clear_flag(g_sensor_popup_ctx->card, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_sensor_popup_ctx->overlay, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_move_foreground(g_sensor_popup_ctx->overlay);
