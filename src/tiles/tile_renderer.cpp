@@ -52,6 +52,9 @@ struct SwitchState {
   bool is_on = false;
   bool has_color = false;
   uint32_t color = 0;
+  bool has_hs = false;
+  float hs_h = 0.0f;
+  float hs_s = 0.0f;
   bool has_brightness = false;
   uint8_t brightness_pct = 100;
   bool supports_color = false;
@@ -438,6 +441,49 @@ static bool is_color_mode(const String& mode) {
          mode == "color_temp";
 }
 
+static LightPopupInit build_popup_init_from_state(const Tile& tile, const SwitchState& state) {
+  LightPopupInit init;
+  init.entity_id = tile.sensor_entity;
+  init.title = tile.title;
+  init.icon_name = tile.icon_name;
+  init.is_light = is_light_entity_id(tile.sensor_entity);
+  init.has_state = state.has_state;
+  init.has_color = state.has_color;
+  init.has_brightness = state.has_brightness;
+  init.has_hs = state.has_hs;
+  init.hs_h = state.hs_h;
+  init.hs_s = state.hs_s;
+
+  if (state.has_state) {
+    init.is_on = state.is_on;
+  } else if (state.has_brightness) {
+    init.is_on = state.brightness_pct > 0;
+  } else {
+    init.is_on = true;
+  }
+
+  if (init.is_light) {
+    init.supports_color = state.supports_color;
+    init.supports_brightness = state.supports_brightness || state.supports_color;
+  } else {
+    init.supports_color = false;
+    init.supports_brightness = false;
+  }
+
+  if (state.has_color) {
+    init.color = state.color;
+  }
+  if (state.has_brightness) {
+    init.brightness_pct = state.brightness_pct;
+  } else if (state.has_state && !state.is_on) {
+    init.brightness_pct = 0;
+  } else {
+    init.brightness_pct = 100;
+  }
+
+  return init;
+}
+
 static SwitchState parse_switch_payload(const char* payload) {
   SwitchState out;
   if (!payload) return out;
@@ -521,11 +567,14 @@ static SwitchState parse_switch_payload(const char* payload) {
       }
     }
 
-    if (!out.has_color) {
+    {
       String hs_list;
       if (extract_json_array_field(text, "hs_color", hs_list)) {
         float h = 0.0f, s = 0.0f;
         if (parse_hs_list(hs_list, h, s)) {
+          out.has_hs = true;
+          out.hs_h = h;
+          out.hs_s = s;
           out.has_color = true;
           out.color = hs_to_rgb(h, s);
         }
@@ -601,11 +650,14 @@ static SwitchState parse_switch_payload(const char* payload) {
         }
       }
 
-      if (!out.has_color) {
+      {
         String hs_list;
         if (extract_json_array_field(attributes, "hs_color", hs_list)) {
           float h = 0.0f, s = 0.0f;
           if (parse_hs_list(hs_list, h, s)) {
+            out.has_hs = true;
+            out.hs_h = h;
+            out.hs_s = s;
             out.has_color = true;
             out.color = hs_to_rgb(h, s);
           }
@@ -643,6 +695,9 @@ static SwitchState parse_switch_payload(const char* payload) {
   }
 
   if (out.has_color) {
+    out.supports_color = true;
+  }
+  if (out.has_hs) {
     out.supports_color = true;
   }
   if (out.has_brightness) {
@@ -697,10 +752,16 @@ static void update_switch_tile_state(GridType grid_type, uint8_t grid_index, con
     state.supports_brightness = true;
   }
 
+  if (!state.has_color && prev.has_color && !state.supported_onoff_only) {
+    state.has_color = true;
+    state.color = prev.color;
+  }
+
   const TileGridConfig& grid = (grid_type == GridType::TAB1)
                                  ? tileConfig.getTab1Grid()
                                  : (grid_type == GridType::TAB2 ? tileConfig.getTab2Grid() : tileConfig.getTab0Grid());
-  const String& entity_id = grid.tiles[grid_index].sensor_entity;
+  const Tile& tile = grid.tiles[grid_index];
+  const String& entity_id = tile.sensor_entity;
   const bool is_light_entity = is_light_entity_id(entity_id);
   if (is_light_entity) {
     if (state.supported_modes_known && state.supported_onoff_only) {
@@ -710,6 +771,11 @@ static void update_switch_tile_state(GridType grid_type, uint8_t grid_index, con
   }
 
   state_target[grid_index] = state;
+
+  if (tile.sensor_entity.length()) {
+    LightPopupInit init = build_popup_init_from_state(tile, state);
+    update_light_popup(init);
+  }
 
   SwitchTileWidgets& widgets = target[grid_index];
   if (!widgets.icon_label && !widgets.title_label && !widgets.switch_obj) return;
@@ -1271,7 +1337,21 @@ static LightPopupInit build_light_popup_init(const SwitchEventData* data) {
   init.title = data->title;
   init.is_light = is_light_entity_id(data->entity_id);
 
+  // Get icon from tile config
+  const TileGridConfig& grid = (data->grid_type == GridType::TAB1)
+                                 ? tileConfig.getTab1Grid()
+                                 : (data->grid_type == GridType::TAB2 ? tileConfig.getTab2Grid() : tileConfig.getTab0Grid());
+  if (data->index < TILES_PER_GRID) {
+    init.icon_name = grid.tiles[data->index].icon_name;
+  }
+
   const SwitchState state = get_switch_state(data->grid_type, data->index);
+  init.has_state = state.has_state;
+  init.has_color = state.has_color;
+  init.has_brightness = state.has_brightness;
+  init.has_hs = state.has_hs;
+  init.hs_h = state.hs_h;
+  init.hs_s = state.hs_s;
   if (state.has_state) {
     init.is_on = state.is_on;
   } else if (state.has_brightness) {

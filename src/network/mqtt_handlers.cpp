@@ -192,11 +192,13 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
     break;
   }
 
-  // Dynamische Sensor-Slots pruefen
-  size_t copy_len = length < (SMALL_BUF - 1) ? length : (SMALL_BUF - 1);
-  memcpy(small_buf, payload, copy_len);
-  small_buf[copy_len] = '\0';
-  if (tryHandleDynamicSensor(topic, small_buf)) {
+  // Dynamische Sensor-Slots pruefen (JSON kann groesser sein -> ggf. Large Buffer)
+  char* dyn_buf = (length < SMALL_BUF) ? small_buf : large_buf;
+  size_t dyn_len = (length < SMALL_BUF) ? sizeof(small_buf) : sizeof(large_buf);
+  size_t copy_len = length < (dyn_len - 1) ? length : (dyn_len - 1);
+  memcpy(dyn_buf, payload, copy_len);
+  dyn_buf[copy_len] = '\0';
+  if (tryHandleDynamicSensor(topic, dyn_buf)) {
     yield();  // Nach Sensor-Update
     return;
   }

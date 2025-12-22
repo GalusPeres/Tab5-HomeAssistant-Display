@@ -1,19 +1,22 @@
 #include "src/ui/light_popup.h"
 #include "src/fonts/ui_fonts.h"
 #include "src/network/mqtt_handlers.h"
+#include "src/tiles/mdi_icons.h"
 
 namespace {
 
-constexpr int kCardWidth = 860;
+constexpr int kCardWidth = 760;
 constexpr int kCardHeight = 420;
 constexpr int kCardPad = 20;
 
 constexpr int kLabelWidth = 140;
 constexpr int kSliderWidth = 420;
-constexpr int kSliderHeight = 26;
+constexpr int kSliderHeight = 18;
+constexpr int kSliderKnobSize = 40;
+constexpr int kSliderClickPad = 22;
 constexpr int kRowHeight = 40;
 constexpr int kRowPadX = 28;
-constexpr int kRowPadY = 6;
+constexpr int kRowPadY = 20;
 constexpr int kSwitchWidth = 90;
 constexpr int kSwitchHeight = 40;
 
@@ -21,13 +24,14 @@ constexpr int kPreviewWidth = 140;
 constexpr int kPreviewHeight = 64;
 
 constexpr uint32_t kDefaultColor = 0xFFD54F;
+constexpr uint32_t kRemoteBlockMs = 3000;
 
 struct LightPopupContext {
   String entity_id;
   lv_obj_t* overlay = nullptr;
   lv_obj_t* card = nullptr;
+  lv_obj_t* icon_label = nullptr;
   lv_obj_t* title_label = nullptr;
-  lv_obj_t* preview = nullptr;
   lv_obj_t* hue_slider = nullptr;
   lv_obj_t* sat_slider = nullptr;
   lv_obj_t* val_slider = nullptr;
@@ -42,10 +46,15 @@ struct LightPopupContext {
   uint16_t hue = 0;
   uint8_t sat = 0;
   uint8_t val = 100;
+  uint8_t last_brightness = 100;  // Remember last brightness before turning off
   bool supports_color = false;
   bool supports_brightness = false;
   bool is_light = true;
   bool is_on = true;
+  bool user_dragging = false;
+  uint32_t last_user_action_ms = 0;
+  uint32_t block_remote_until_ms = 0;
+  bool suppress_events = false;
 };
 
 static LightPopupContext* g_light_popup_ctx = nullptr;
@@ -56,6 +65,54 @@ static void on_overlay_click(lv_event_t* e) {
   if (!ctx || !ctx->overlay || !ctx->card) return;
   lv_obj_add_flag(ctx->card, LV_OBJ_FLAG_HIDDEN);
   lv_obj_clear_flag(ctx->overlay, LV_OBJ_FLAG_CLICKABLE);
+}
+
+static void mark_user_action(LightPopupContext* ctx) {
+  if (!ctx) return;
+  uint32_t now = millis();
+  ctx->last_user_action_ms = now;
+  ctx->block_remote_until_ms = now + kRemoteBlockMs;
+}
+
+static bool should_block_remote_update(LightPopupContext* ctx) {
+  if (!ctx) return false;
+  if (ctx->user_dragging) return true;
+  uint32_t now = millis();
+  return (now - ctx->last_user_action_ms) < 500;
+}
+
+static bool get_init_hs(const LightPopupInit& init, uint16_t& h, uint8_t& s) {
+  if (init.has_hs) {
+    h = static_cast<uint16_t>(roundf(init.hs_h));
+    s = static_cast<uint8_t>(roundf(init.hs_s));
+    return true;
+  }
+  if (init.has_color && init.color) {
+    lv_color_hsv_t hsv = lv_color_to_hsv(lv_color_hex(init.color));
+    h = hsv.h;
+    s = hsv.s;
+    return true;
+  }
+  return false;
+}
+
+static bool is_remote_update_close(LightPopupContext* ctx, const LightPopupInit& init) {
+  if (!ctx) return true;
+  if (ctx->supports_color) {
+    uint16_t h = 0;
+    uint8_t s = 0;
+    if (get_init_hs(init, h, s)) {
+      int dh = abs(static_cast<int>(h) - static_cast<int>(ctx->hue));
+      if (dh > 180) dh = 360 - dh;
+      int ds = abs(static_cast<int>(s) - static_cast<int>(ctx->sat));
+      if (dh > 4 || ds > 4) return false;
+    }
+  }
+  if (ctx->supports_brightness && init.has_brightness) {
+    int dv = abs(static_cast<int>(init.brightness_pct) - static_cast<int>(ctx->val));
+    if (dv > 3) return false;
+  }
+  return true;
 }
 
 static void set_label_style(lv_obj_t* lbl, lv_color_t color) {
@@ -103,25 +160,26 @@ static void publish_light_popup(LightPopupContext* ctx) {
 
 static void update_preview(LightPopupContext* ctx) {
   if (!ctx) return;
-  if (ctx->preview) {
-    uint8_t preview_val = ctx->supports_brightness ? ctx->val : 100;
+
+  // Update icon color based on light state
+  if (ctx->icon_label) {
+    uint32_t rgb = 0;
+
+    // If light is off, show gray icon (like tiles)
     if (!ctx->is_on) {
-      preview_val = 0;
+      rgb = 0xB0B0B0;  // Tile gray
+    } else {
+      // Light is on - mirror tile icon behavior
+      if (ctx->supports_color) {
+        rgb = color_from_hsv(ctx->hue, ctx->sat, 100);
+      } else {
+        rgb = kDefaultColor;
+      }
     }
 
-    uint32_t rgb = 0;
-    if (!ctx->supports_color && !ctx->supports_brightness) {
-      rgb = ctx->is_on ? kDefaultColor : 0x2A2A2A;
-    } else if (ctx->supports_color) {
-      rgb = color_from_hsv(ctx->hue, ctx->sat, preview_val);
-    } else {
-      uint8_t level = static_cast<uint8_t>((preview_val * 255) / 100);
-      rgb = (static_cast<uint32_t>(level) << 16) |
-            (static_cast<uint32_t>(level) << 8) |
-            static_cast<uint32_t>(level);
-    }
-    lv_obj_set_style_bg_color(ctx->preview, lv_color_hex(rgb), LV_PART_MAIN);
+    lv_obj_set_style_text_color(ctx->icon_label, lv_color_hex(rgb), 0);
   }
+
   update_value_label(ctx->hue_value, ctx->hue, "");
   update_value_label(ctx->sat_value, ctx->sat, "%");
   update_value_label(ctx->val_value, ctx->val, "%");
@@ -129,33 +187,63 @@ static void update_preview(LightPopupContext* ctx) {
 
 static void apply_init_to_context(LightPopupContext* ctx, const LightPopupInit& init) {
   if (!ctx) return;
+  ctx->suppress_events = true;
   ctx->entity_id = init.entity_id;
   ctx->supports_color = init.supports_color;
   ctx->supports_brightness = init.supports_brightness || init.supports_color;
   ctx->is_light = init.is_light;
-  ctx->is_on = init.is_on;
+  if (init.has_state) {
+    ctx->is_on = init.is_on;
+  }
 
-  uint32_t base_color = init.color ? init.color : kDefaultColor;
-  if (ctx->supports_color) {
-    lv_color_hsv_t hsv = lv_color_to_hsv(lv_color_hex(base_color));
-    ctx->hue = hsv.h;
-    ctx->sat = hsv.s;
-  } else {
+  bool update_color = ctx->supports_color && (init.has_hs || init.has_color);
+  if (update_color) {
+    if (init.has_hs) {
+      ctx->hue = static_cast<uint16_t>(roundf(init.hs_h));
+      ctx->sat = static_cast<uint8_t>(roundf(init.hs_s));
+    } else {
+      uint32_t base_color = init.color ? init.color : kDefaultColor;
+      lv_color_hsv_t hsv = lv_color_to_hsv(lv_color_hex(base_color));
+      ctx->hue = hsv.h;
+      ctx->sat = hsv.s;
+    }
+  } else if (!ctx->supports_color) {
     ctx->hue = 0;
     ctx->sat = 0;
   }
-  ctx->val = ctx->supports_brightness ? init.brightness_pct : 0;
+
+  bool update_val = false;
+  if (ctx->supports_brightness) {
+    if (init.has_brightness) {
+      ctx->val = init.brightness_pct;
+      update_val = true;
+    } else if (init.has_state && !ctx->is_on) {
+      ctx->val = 0;
+      update_val = true;
+    }
+  } else {
+    ctx->val = 0;
+    update_val = true;
+  }
+
+  if (ctx->val > 0) {
+    ctx->last_brightness = ctx->val;
+  }
 
   if (ctx->title_label) {
     lv_label_set_text(ctx->title_label, init.title.c_str());
   }
-  if (ctx->hue_slider) {
+  if (ctx->icon_label && init.icon_name.length() > 0) {
+    String icon_char = getMdiChar(init.icon_name);
+    lv_label_set_text(ctx->icon_label, icon_char.c_str());
+  }
+  if (ctx->hue_slider && update_color) {
     lv_slider_set_value(ctx->hue_slider, ctx->hue, LV_ANIM_OFF);
   }
-  if (ctx->sat_slider) {
+  if (ctx->sat_slider && update_color) {
     lv_slider_set_value(ctx->sat_slider, ctx->sat, LV_ANIM_OFF);
   }
-  if (ctx->val_slider) {
+  if (ctx->val_slider && update_val) {
     lv_slider_set_value(ctx->val_slider, ctx->val, LV_ANIM_OFF);
   }
 
@@ -181,6 +269,7 @@ static void apply_init_to_context(LightPopupContext* ctx, const LightPopupInit& 
     else lv_obj_add_flag(ctx->val_row, LV_OBJ_FLAG_HIDDEN);
   }
   update_preview(ctx);
+  ctx->suppress_events = false;
 }
 
 static lv_obj_t* create_slider_row(lv_obj_t* parent,
@@ -214,6 +303,9 @@ static lv_obj_t* create_slider_row(lv_obj_t* parent,
   lv_obj_set_style_radius(slider, 12, LV_PART_MAIN);
   lv_obj_set_style_radius(slider, 12, LV_PART_INDICATOR);
   lv_obj_set_style_radius(slider, LV_RADIUS_CIRCLE, LV_PART_KNOB);
+  lv_obj_set_style_width(slider, kSliderKnobSize, LV_PART_KNOB);
+  lv_obj_set_style_height(slider, kSliderKnobSize, LV_PART_KNOB);
+  lv_obj_set_ext_click_area(slider, kSliderClickPad);
 
   lv_obj_t* value = lv_label_create(row);
   set_label_style(value, lv_color_white());
@@ -255,8 +347,32 @@ static lv_obj_t* create_switch_row(lv_obj_t* parent,
 static void on_power_switch_changed(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
   LightPopupContext* ctx = static_cast<LightPopupContext*>(lv_event_get_user_data(e));
-  if (!ctx || !ctx->power_switch) return;
-  ctx->is_on = lv_obj_has_state(ctx->power_switch, LV_STATE_CHECKED);
+  if (!ctx || !ctx->power_switch || ctx->suppress_events) return;
+  bool new_state = lv_obj_has_state(ctx->power_switch, LV_STATE_CHECKED);
+  mark_user_action(ctx);
+
+  if (ctx->supports_brightness) {
+    if (new_state) {
+      // Turning ON: Restore last brightness (or 100% if it was 0)
+      if (ctx->val == 0) {
+        ctx->val = ctx->last_brightness > 0 ? ctx->last_brightness : 100;
+        if (ctx->val_slider) {
+          lv_slider_set_value(ctx->val_slider, ctx->val, LV_ANIM_OFF);
+        }
+      }
+    } else {
+      // Turning OFF: Save current brightness and set to 0
+      if (ctx->val > 0) {
+        ctx->last_brightness = ctx->val;
+      }
+      ctx->val = 0;
+      if (ctx->val_slider) {
+        lv_slider_set_value(ctx->val_slider, 0, LV_ANIM_OFF);
+      }
+    }
+  }
+
+  ctx->is_on = new_state;
   update_preview(ctx);
   publish_light_popup(ctx);
 }
@@ -264,11 +380,12 @@ static void on_power_switch_changed(lv_event_t* e) {
 static void on_hue_changed(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
   LightPopupContext* ctx = static_cast<LightPopupContext*>(lv_event_get_user_data(e));
-  if (!ctx || !ctx->hue_slider || !ctx->supports_color) return;
+  if (!ctx || !ctx->hue_slider || !ctx->supports_color || ctx->suppress_events) return;
   int value = lv_slider_get_value(ctx->hue_slider);
   if (value < 0) value = 0;
   if (value > 360) value = 360;
   ctx->hue = static_cast<uint16_t>(value);
+  mark_user_action(ctx);
   update_preview(ctx);
   publish_light_popup(ctx);
 }
@@ -276,11 +393,12 @@ static void on_hue_changed(lv_event_t* e) {
 static void on_sat_changed(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
   LightPopupContext* ctx = static_cast<LightPopupContext*>(lv_event_get_user_data(e));
-  if (!ctx || !ctx->sat_slider || !ctx->supports_color) return;
+  if (!ctx || !ctx->sat_slider || !ctx->supports_color || ctx->suppress_events) return;
   int value = lv_slider_get_value(ctx->sat_slider);
   if (value < 0) value = 0;
   if (value > 100) value = 100;
   ctx->sat = static_cast<uint8_t>(value);
+  mark_user_action(ctx);
   update_preview(ctx);
   publish_light_popup(ctx);
 }
@@ -288,13 +406,46 @@ static void on_sat_changed(lv_event_t* e) {
 static void on_val_changed(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
   LightPopupContext* ctx = static_cast<LightPopupContext*>(lv_event_get_user_data(e));
-  if (!ctx || !ctx->val_slider || !ctx->supports_brightness) return;
+  if (!ctx || !ctx->val_slider || !ctx->supports_brightness || ctx->suppress_events) return;
   int value = lv_slider_get_value(ctx->val_slider);
   if (value < 0) value = 0;
   if (value > 100) value = 100;
   ctx->val = static_cast<uint8_t>(value);
+  mark_user_action(ctx);
+
+  // Sync switch with brightness
+  if (ctx->power_switch) {
+    if (value == 0 && ctx->is_on) {
+      // Brightness to 0 → turn off switch
+      ctx->is_on = false;
+      lv_obj_remove_state(ctx->power_switch, LV_STATE_CHECKED);
+    } else if (value > 0 && !ctx->is_on) {
+      // Brightness > 0 → turn on switch
+      ctx->is_on = true;
+      lv_obj_add_state(ctx->power_switch, LV_STATE_CHECKED);
+      ctx->last_brightness = value;
+    } else if (value > 0) {
+      // Update last brightness while on
+      ctx->last_brightness = value;
+    }
+  }
+
   update_preview(ctx);
   publish_light_popup(ctx);
+}
+
+static void on_slider_pressed(lv_event_t* e) {
+  LightPopupContext* ctx = static_cast<LightPopupContext*>(lv_event_get_user_data(e));
+  if (!ctx || ctx->suppress_events) return;
+  ctx->user_dragging = true;
+  mark_user_action(ctx);
+}
+
+static void on_slider_released(lv_event_t* e) {
+  LightPopupContext* ctx = static_cast<LightPopupContext*>(lv_event_get_user_data(e));
+  if (!ctx || ctx->suppress_events) return;
+  ctx->user_dragging = false;
+  mark_user_action(ctx);
 }
 
 static void on_overlay_delete(lv_event_t* e) {
@@ -339,25 +490,28 @@ void show_light_popup(const LightPopupInit& init) {
   lv_obj_set_style_radius(card, 22, 0);
   lv_obj_set_style_border_width(card, 0, 0);
   lv_obj_set_style_pad_all(card, kCardPad, 0);
-  lv_obj_set_style_shadow_width(card, 24, 0);
+  lv_obj_set_style_shadow_width(card, 28, 0);
   lv_obj_set_style_shadow_color(card, lv_color_hex(0x000000), 0);
   lv_obj_set_style_shadow_opa(card, LV_OPA_40, 0);
   lv_obj_set_style_shadow_spread(card, 2, 0);
   lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
+  // Title (left)
   lv_obj_t* title = lv_label_create(card);
   ctx->title_label = title;
   set_label_style(title, lv_color_white());
   lv_label_set_text(title, init.title.c_str());
-  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
+  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 4);
 
-  lv_obj_t* preview = lv_obj_create(card);
-  ctx->preview = preview;
-  lv_obj_set_size(preview, kPreviewWidth, kPreviewHeight);
-  lv_obj_set_style_radius(preview, 12, 0);
-  lv_obj_set_style_border_width(preview, 0, 0);
-  lv_obj_set_style_bg_opa(preview, LV_OPA_COVER, 0);
-  lv_obj_align(preview, LV_ALIGN_TOP_RIGHT, 0, 0);
+  // Icon (right) - colored based on light state
+  lv_obj_t* icon = lv_label_create(card);
+  ctx->icon_label = icon;
+  lv_obj_set_style_text_font(icon, FONT_MDI_ICONS, 0);
+  lv_obj_align(icon, LV_ALIGN_TOP_RIGHT, 4, -8);
+  if (init.icon_name.length() > 0) {
+    String icon_char = getMdiChar(init.icon_name);
+    lv_label_set_text(icon, icon_char.c_str());
+  }
 
   lv_obj_t* content = lv_obj_create(card);
   lv_obj_set_size(content, LV_PCT(100), LV_PCT(100));
@@ -365,7 +519,7 @@ void show_light_popup(const LightPopupInit& init) {
   lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(content, 0, 0);
   lv_obj_set_style_pad_all(content, 0, 0);
-  lv_obj_set_style_pad_top(content, 40, 0);
+  lv_obj_set_style_pad_top(content, 100, 0);
   lv_obj_set_layout(content, LV_LAYOUT_FLEX);
   lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_style_pad_row(content, kRowPadY, 0);
@@ -381,6 +535,32 @@ void show_light_popup(const LightPopupInit& init) {
   lv_obj_add_event_cb(ctx->hue_slider, on_hue_changed, LV_EVENT_VALUE_CHANGED, ctx);
   lv_obj_add_event_cb(ctx->sat_slider, on_sat_changed, LV_EVENT_VALUE_CHANGED, ctx);
   lv_obj_add_event_cb(ctx->val_slider, on_val_changed, LV_EVENT_VALUE_CHANGED, ctx);
+  lv_obj_add_event_cb(ctx->hue_slider, on_slider_pressed, LV_EVENT_PRESSED, ctx);
+  lv_obj_add_event_cb(ctx->sat_slider, on_slider_pressed, LV_EVENT_PRESSED, ctx);
+  lv_obj_add_event_cb(ctx->val_slider, on_slider_pressed, LV_EVENT_PRESSED, ctx);
+  lv_obj_add_event_cb(ctx->hue_slider, on_slider_released, LV_EVENT_RELEASED, ctx);
+  lv_obj_add_event_cb(ctx->sat_slider, on_slider_released, LV_EVENT_RELEASED, ctx);
+  lv_obj_add_event_cb(ctx->val_slider, on_slider_released, LV_EVENT_RELEASED, ctx);
+  lv_obj_add_event_cb(ctx->hue_slider, on_slider_released, LV_EVENT_PRESS_LOST, ctx);
+  lv_obj_add_event_cb(ctx->sat_slider, on_slider_released, LV_EVENT_PRESS_LOST, ctx);
+  lv_obj_add_event_cb(ctx->val_slider, on_slider_released, LV_EVENT_PRESS_LOST, ctx);
   lv_obj_add_event_cb(overlay, on_overlay_click, LV_EVENT_CLICKED, ctx);
   lv_obj_add_event_cb(overlay, on_overlay_delete, LV_EVENT_DELETE, ctx);
+}
+
+void update_light_popup(const LightPopupInit& init) {
+  if (!g_light_popup_ctx || !g_light_popup_ctx->overlay || !g_light_popup_ctx->card) return;
+  if (!g_light_popup_ctx->entity_id.length()) return;
+  if (!g_light_popup_ctx->entity_id.equalsIgnoreCase(init.entity_id)) return;
+  if (lv_obj_has_flag(g_light_popup_ctx->card, LV_OBJ_FLAG_HIDDEN)) return;
+  if (should_block_remote_update(g_light_popup_ctx)) return;
+  if (g_light_popup_ctx->block_remote_until_ms != 0 &&
+      millis() < g_light_popup_ctx->block_remote_until_ms) {
+    return;
+  }
+  if ((millis() - g_light_popup_ctx->last_user_action_ms) < 4000 &&
+      !is_remote_update_close(g_light_popup_ctx, init)) {
+    return;
+  }
+  apply_init_to_context(g_light_popup_ctx, init);
 }
