@@ -359,7 +359,6 @@ void show_sensor_popup(const SensorPopupInit& init) {
     clear_chart(g_sensor_popup_ctx, kHistoryPointsDefault);
     lv_obj_clear_flag(g_sensor_popup_ctx->card, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_sensor_popup_ctx->overlay, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_move_foreground(g_sensor_popup_ctx->overlay);
   } else {
     SensorPopupContext* ctx = new SensorPopupContext();
     g_sensor_popup_ctx = ctx;
