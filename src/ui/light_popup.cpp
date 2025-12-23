@@ -585,9 +585,9 @@ void show_light_popup(const LightPopupInit& init) {
   lv_obj_set_style_pad_row(content, kRowPadY, 0);
 
   ctx->power_row = create_centered_power_status(content, &ctx->power_switch, &ctx->power_status_label);
-  ctx->hue_row = create_slider_row(content, "Farbton", 0, 360, &ctx->hue_slider, &ctx->hue_value);
-  ctx->sat_row = create_slider_row(content, "Saettigung", 0, 100, &ctx->sat_slider, &ctx->sat_value);
   ctx->val_row = create_slider_row(content, "Helligkeit", 0, 100, &ctx->val_slider, &ctx->val_value);
+  ctx->hue_row = create_slider_row(content, "Farbton", 0, 360, &ctx->hue_slider, &ctx->hue_value);
+  ctx->sat_row = create_slider_row(content, "Sättigung", 0, 100, &ctx->sat_slider, &ctx->sat_value);
 
   apply_init_to_context(ctx, init);
 
