@@ -68,7 +68,7 @@
       font-weight: 600;
     }
 
-    .config-row input {
+    .config-row input[type="text"] {
       flex: 1;
       padding: 8px 12px;
       border: 1px solid #444;
@@ -76,6 +76,12 @@
       background: #1a1a1a;
       color: white;
       font-size: 14px;
+    }
+
+    .config-row input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
     }
 
     .buttons {
@@ -225,6 +231,11 @@
       <label>Tab5 IP:</label>
       <input type="text" id="tab5-ip" value="192.168.2.235" placeholder="192.168.2.235">
     </div>
+    <div class="config-row">
+      <label>Autostart:</label>
+      <input type="checkbox" id="autostart-checkbox" checked onchange="toggleAutostart()">
+      <span style="font-size: 14px; color: #a0a0a0; margin-left: 10px;">Start with Windows</span>
+    </div>
     <div class="buttons">
       <button class="primary" onclick="connect()">Connect</button>
       <button class="secondary" onclick="disconnect()">Disconnect</button>
@@ -248,6 +259,12 @@
 
   <script>
     const { ipcRenderer } = require('electron');
+
+    // Autostart beim Start laden
+    window.addEventListener('DOMContentLoaded', () => {
+      const autostartEnabled = ipcRenderer.sendSync('get-autostart');
+      document.getElementById('autostart-checkbox').checked = autostartEnabled;
+    });
 
     // Status Updates
     ipcRenderer.on('status', (event, status) => {
@@ -288,6 +305,11 @@
 
     function clearLog() {
       document.getElementById('log').innerHTML = '';
+    }
+
+    function toggleAutostart() {
+      const enabled = document.getElementById('autostart-checkbox').checked;
+      ipcRenderer.send('set-autostart', enabled);
     }
   </script>
 </body>

@@ -1,10 +1,19 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu } = require('electron');
 const path = require('path');
 const WebSocket = require('ws');
+const Store = require('electron-store');
 
 // keysender für schnelle Tastensimulation
 const { Hardware } = require('keysender');
 const kb = new Hardware(null); // null = kein spezifisches Fenster, globale Eingabe
+
+// Settings Store
+const store = new Store({
+  defaults: {
+    autostart: true,  // Standard: Autostart aktiviert
+    tab5_ip: '192.168.2.235'
+  }
+});
 
 let mainWindow = null;
 let tray = null;
@@ -14,7 +23,7 @@ let pingInterval = null;
 let connectionAttempts = 0;
 
 // Tab5 WebSocket Verbindung
-let TAB5_IP = '192.168.2.235'; // Änderbar über UI
+let TAB5_IP = store.get('tab5_ip'); // Aus Settings laden
 const TAB5_PORT = 8081;
 
 // Scan Code zu Robot Key Mapping
@@ -32,7 +41,7 @@ const SCANCODE_MAP = {
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 500,
-    height: 700,
+    height: 750,  // Etwas höher für Autostart-Checkbox
     show: false, // Nicht sofort anzeigen
     webPreferences: {
       nodeIntegration: true,
@@ -40,6 +49,9 @@ function createWindow() {
     },
     icon: path.join(__dirname, 'icon.png')
   });
+
+  // Menüleiste entfernen
+  Menu.setApplicationMenu(null);
 
   mainWindow.loadFile('index.html');
 
@@ -260,12 +272,40 @@ ipcMain.on('disconnect', () => {
 
 ipcMain.on('set-tab5-ip', (event, ip) => {
   TAB5_IP = ip;
-  // TODO: In Config speichern
+  store.set('tab5_ip', ip);  // In Config speichern
   log(`Tab5 IP changed to: ${ip}`);
+});
+
+// Autostart Funktionen
+function setAutostart(enabled) {
+  app.setLoginItemSettings({
+    openAtLogin: enabled,
+    openAsHidden: true,  // Im Tray starten
+    args: ['--hidden']
+  });
+  store.set('autostart', enabled);
+  log(`Autostart ${enabled ? 'enabled' : 'disabled'}`);
+}
+
+function getAutostart() {
+  return store.get('autostart', true);
+}
+
+// IPC Handler für Autostart
+ipcMain.on('get-autostart', (event) => {
+  event.returnValue = getAutostart();
+});
+
+ipcMain.on('set-autostart', (event, enabled) => {
+  setAutostart(enabled);
 });
 
 // App Lifecycle
 app.whenReady().then(() => {
+  // Autostart beim ersten Start aktivieren
+  const autostartEnabled = getAutostart();
+  setAutostart(autostartEnabled);
+
   createTray();    // Tray zuerst erstellen
   createWindow();  // Dann Window (startet minimiert wenn Tray existiert)
 
