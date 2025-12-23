@@ -229,7 +229,7 @@
   <div class="config">
     <div class="config-row">
       <label>Tab5 IP:</label>
-      <input type="text" id="tab5-ip" value="192.168.2.235" placeholder="192.168.2.235">
+      <input type="text" id="tab5-ip" placeholder="192.168.2.235">
     </div>
     <div class="config-row">
       <label>Autostart:</label>
@@ -260,10 +260,13 @@
   <script>
     const { ipcRenderer } = require('electron');
 
-    // Autostart beim Start laden
+    // Settings beim Start laden
     window.addEventListener('DOMContentLoaded', () => {
       const autostartEnabled = ipcRenderer.sendSync('get-autostart');
       document.getElementById('autostart-checkbox').checked = autostartEnabled;
+
+      const savedIp = ipcRenderer.sendSync('get-tab5-ip');
+      document.getElementById('tab5-ip').value = savedIp;
     });
 
     // Status Updates

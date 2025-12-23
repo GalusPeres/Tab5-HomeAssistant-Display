@@ -270,6 +270,10 @@ ipcMain.on('disconnect', () => {
   }
 });
 
+ipcMain.on('get-tab5-ip', (event) => {
+  event.returnValue = store.get('tab5_ip');
+});
+
 ipcMain.on('set-tab5-ip', (event, ip) => {
   TAB5_IP = ip;
   store.set('tab5_ip', ip);  // In Config speichern
