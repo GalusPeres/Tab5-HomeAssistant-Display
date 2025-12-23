@@ -46,8 +46,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
-    },
-    icon: path.join(__dirname, 'icon.png')
+    }
   });
 
   // Menüleiste entfernen
@@ -76,7 +75,6 @@ function createWindow() {
 }
 
 function createTray() {
-  // Tray Icon optional - nur wenn icon.png existiert
   const fs = require('fs');
   const iconPath = path.join(__dirname, 'icon.png');
 

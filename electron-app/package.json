@@ -13,13 +13,13 @@
   "author": "Tab5 User",
   "license": "MIT",
   "dependencies": {
-    "electron": "^28.0.0",
     "electron-store": "^8.1.0",
     "keysender": "2.4.0",
     "sharp": "0.34.5",
     "ws": "^8.16.0"
   },
   "devDependencies": {
+    "electron": "^28.0.0",
     "electron-builder": "^24.9.1"
   },
   "build": {
@@ -29,16 +29,10 @@
       "output": "dist"
     },
     "files": [
-      "**/*",
-      "!node_modules/**/*",
-      "node_modules/keysender/**/*",
-      "node_modules/sharp/**/*",
-      "node_modules/ws/**/*",
-      "node_modules/electron-store/**/*"
+      "**/*"
     ],
     "win": {
-      "target": ["nsis"],
-      "icon": "icon.png"
+      "target": ["nsis"]
     },
     "nsis": {
       "oneClick": false,
@@ -48,12 +42,10 @@
       "runAfterFinish": true
     },
     "mac": {
-      "target": ["dmg"],
-      "icon": "icon.png"
+      "target": ["dmg"]
     },
     "linux": {
-      "target": ["AppImage"],
-      "icon": "icon.png"
+      "target": ["AppImage"]
     }
   }
 }
