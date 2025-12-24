@@ -1,7 +1,8 @@
 #include <M5Unified.h>
 #include <WiFi.h>
 #include <Wire.h> // Wichtig
-#include <SPI.h>  // Wichtig fÃ¼r M5GFX
+#include <SPI.h>  // Wichtig für M5GFX
+#include <SD.h>   // SD Card Support
 
 #include "src/core/display_manager.h"
 #include "src/core/power_manager.h"
@@ -88,6 +89,17 @@ void setup() {
   Serial.flush();
   Wire.setClock(400000);
   Serial.println("[Setup] Wire OK");
+  Serial.flush();
+
+  // SD Card Initialization
+  Serial.println("[Setup] SD Card init...");
+  Serial.flush();
+  SPI.begin(43, 39, 44, 42);  // SCK, MISO, MOSI, CS
+  if (!SD.begin(42, SPI, 25000000)) {
+    Serial.println("[Setup] SD Card nicht gefunden (optional)");
+  } else {
+    Serial.println("[Setup] SD Card OK");
+  }
   Serial.flush();
 
   Serial.println("[Setup] displayManager.init()...");

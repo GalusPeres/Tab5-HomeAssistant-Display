@@ -312,7 +312,9 @@ void WebAdminServer::handleGetTiles() {
     json += "\"key_modifier\":" + String(tile.key_modifier);
     json += ",\"switch_style\":";
     json += String((tile.type == TILE_SWITCH && tile.sensor_decimals == 1) ? 1 : 0);
-    json += "}";
+    json += ",\"image_path\":\"";
+    json += tile.image_path;
+    json += "\"}";
 
     server.send(200, "application/json", json);
     return;
@@ -347,7 +349,9 @@ void WebAdminServer::handleGetTiles() {
     json += "\"key_modifier\":" + String(tile.key_modifier);
     json += ",\"switch_style\":";
     json += String((tile.type == TILE_SWITCH && tile.sensor_decimals == 1) ? 1 : 0);
-    json += "}";
+    json += ",\"image_path\":\"";
+    json += tile.image_path;
+    json += "\"}";
   }
   json += "]";
 
@@ -441,6 +445,12 @@ void WebAdminServer::handleSaveTiles() {
       style = (raw == 1) ? 1 : 0;
     }
     tile.sensor_decimals = style;
+    tile.sensor_value_font = 0;
+  } else if (type == TILE_IMAGE) {
+    // Element-Pool: image_path wird in key_macro gespeichert (siehe tile_config.cpp packTile/unpackTile)
+    tile.image_path = server.hasArg("image_path") ? server.arg("image_path") : "";
+    Serial.printf("[WebAdmin] IMAGE Tile - Empfangener Pfad: '%s'\n", tile.image_path.c_str());
+    tile.sensor_decimals = 0xFF;
     tile.sensor_value_font = 0;
   } else {
     tile.sensor_decimals = 0xFF;

@@ -1,5 +1,6 @@
 #include "src/ui/light_popup.h"
 #include "src/ui/sensor_popup.h"
+#include "src/ui/image_popup.h"
 #include "src/fonts/ui_fonts.h"
 #include "src/network/mqtt_handlers.h"
 #include "src/tiles/mdi_icons.h"
@@ -520,8 +521,9 @@ static void on_overlay_delete(lv_event_t* e) {
 void show_light_popup(const LightPopupInit& init) {
   if (!init.entity_id.length()) return;
 
-  // Hide sensor popup if visible
+  // Hide other popups if visible
   hide_sensor_popup();
+  hide_image_popup();
 
   if (g_light_popup_ctx && g_light_popup_ctx->overlay && g_light_popup_ctx->card) {
     apply_init_to_context(g_light_popup_ctx, init);

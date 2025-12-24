@@ -118,6 +118,16 @@ static void appendTileTabHTML(
       } else {
         tileStyle = "background:#353535";
       }
+    } else if (tile.type == TILE_IMAGE) {
+      cssClass += " image";
+      if (tile.bg_color != 0) {
+        char colorHex[8];
+        snprintf(colorHex, sizeof(colorHex), "#%06X", (unsigned int)tile.bg_color);
+        tileStyle = "background:";
+        tileStyle += colorHex;
+      } else {
+        tileStyle = "background:#353535";
+      }
     }
 
     html += "<div class=\"";
@@ -213,6 +223,7 @@ static void appendTileTabHTML(
               <option value="3">Key</option>
               <option value="4">Navigation</option>
               <option value="5">Schalter</option>
+              <option value="6">Bild</option>
             </select>
 
             <label>Titel</label>
@@ -357,6 +368,17 @@ static void appendTileTabHTML(
                 <option value="0">Icon Button</option>
                 <option value="1">LVGL Switch</option>
               </select>
+            </div>
+
+            <!-- Image Fields -->
+            <div id=")html";
+  html += tab_id;
+  html += R"html(_image_fields" class="type-fields">
+              <label>Bildpfad (SD-Karte)</label>
+              <input type="text" id=")html";
+  html += tab_id;
+  html += R"html(_image_path" placeholder="/bild.png">
+              <div style="font-size:11px;color:#64748b;margin-top:4px;">Pfad zur PNG-Datei auf der SD-Karte (z.B. /bild.png)</div>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:#64748b;gap:10px;">
               <span>Aenderungen werden automatisch gespeichert.</span>

@@ -1,5 +1,6 @@
 #include "src/ui/sensor_popup.h"
 #include "src/ui/light_popup.h"
+#include "src/ui/image_popup.h"
 #include "src/fonts/ui_fonts.h"
 #include "src/network/mqtt_handlers.h"
 #include "src/tiles/mdi_icons.h"
@@ -351,8 +352,9 @@ static bool should_request_history(const SensorPopupInit& init) {
 void show_sensor_popup(const SensorPopupInit& init) {
   if (!init.entity_id.length()) return;
 
-  // Hide light popup if visible
+  // Hide other popups if visible
   hide_light_popup();
+  hide_image_popup();
 
   if (g_sensor_popup_ctx && g_sensor_popup_ctx->overlay && g_sensor_popup_ctx->card) {
     apply_init_to_context(g_sensor_popup_ctx, init);

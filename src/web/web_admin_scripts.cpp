@@ -213,7 +213,8 @@ void appendAdminScripts(String& html) {
       key_macro: document.getElementById(prefix + '_key_macro')?.value || '',
       navigate_target: document.getElementById(prefix + '_navigate_target')?.value || '0',
       switch_entity: document.getElementById(prefix + '_switch_entity')?.value || '',
-      switch_style: document.getElementById(prefix + '_switch_style')?.value || '0'
+      switch_style: document.getElementById(prefix + '_switch_style')?.value || '0',
+      image_path: document.getElementById(prefix + '_image_path')?.value || ''
     };
     drafts[tab][currentTileIndex] = d;
     persistDrafts();
@@ -246,6 +247,8 @@ void appendAdminScripts(String& html) {
       document.getElementById(prefix + '_switch_entity').value = d.switch_entity || '';
       const styleEl = document.getElementById(prefix + '_switch_style');
       if (styleEl) styleEl.value = d.switch_style || '0';
+    } else if (d.type === '6') {
+      document.getElementById(prefix + '_image_path').value = d.image_path || '';
     }
     updateTilePreview(tab);
     return true;
@@ -277,7 +280,8 @@ void appendAdminScripts(String& html) {
       key_macro: document.getElementById(prefix + '_key_macro')?.value || '',
       navigate_target: document.getElementById(prefix + '_navigate_target')?.value || '0',
       switch_entity: document.getElementById(prefix + '_switch_entity')?.value || '',
-      switch_style: document.getElementById(prefix + '_switch_style')?.value || '0'
+      switch_style: document.getElementById(prefix + '_switch_style')?.value || '0',
+      image_path: document.getElementById(prefix + '_image_path')?.value || ''
     };
   }
 
@@ -684,7 +688,8 @@ void appendAdminScripts(String& html) {
                     tileElem.classList.contains('scene')    ? '2' :
                     tileElem.classList.contains('key')      ? '3' :
                     tileElem.classList.contains('navigate') ? '4' :
-                    tileElem.classList.contains('switch')   ? '5' : '0';
+                    tileElem.classList.contains('switch')   ? '5' :
+                    tileElem.classList.contains('image')    ? '6' : '0';
     const title = document.getElementById(prefix + '_tile_title').value;
     const color = document.getElementById(prefix + '_tile_color').value;
     const type = document.getElementById(prefix + '_tile_type').value;
@@ -721,6 +726,9 @@ void appendAdminScripts(String& html) {
     } else if (type === '5') {
       tileElem.classList.add('switch');
       if (switchStyle === '1') tileElem.classList.add('switch-toggle');
+      tileElem.style.background = color || '#353535';
+    } else if (type === '6') {
+      tileElem.classList.add('image');
       tileElem.style.background = color || '#353535';
     }
 
@@ -795,6 +803,8 @@ void appendAdminScripts(String& html) {
           document.getElementById(prefix + '_switch_entity').value = data.sensor_entity || '';
           const styleEl = document.getElementById(prefix + '_switch_style');
           if (styleEl) styleEl.value = (data.switch_style !== undefined) ? String(data.switch_style) : '0';
+        } else if (data.type === 6) {
+          document.getElementById(prefix + '_image_path').value = data.image_path || '';
         }
       const decEl = document.getElementById(prefix + '_sensor_decimals');
       if (data.type !== 1 && decEl) decEl.value = '';
@@ -821,6 +831,7 @@ void appendAdminScripts(String& html) {
     else if (typeValue === '3') document.getElementById(prefix + '_key_fields').classList.add('show');
     else if (typeValue === '4') document.getElementById(prefix + '_navigate_fields').classList.add('show');
     else if (typeValue === '5') document.getElementById(prefix + '_switch_fields').classList.add('show');
+    else if (typeValue === '6') document.getElementById(prefix + '_image_fields').classList.add('show');
   }
 
   function showNotification(message, success = true) {
@@ -844,7 +855,7 @@ void appendAdminScripts(String& html) {
     document.getElementById(prefix + '_tile_title').value = '';
     document.getElementById(prefix + '_tile_icon').value = '';
     document.getElementById(prefix + '_tile_color').value = '#2A2A2A';
-    ['_sensor_entity','_sensor_unit','_sensor_decimals','_sensor_value_font','_scene_alias','_key_macro','_switch_entity','_switch_style'].forEach(suf => {
+    ['_sensor_entity','_sensor_unit','_sensor_decimals','_sensor_value_font','_scene_alias','_key_macro','_switch_entity','_switch_style','_image_path'].forEach(suf => {
       const el = document.getElementById(prefix + suf);
       if (el) el.value = (suf === '_switch_style' || suf === '_sensor_value_font') ? '0' : '';
     });
@@ -883,6 +894,8 @@ void appendAdminScripts(String& html) {
       formData.append('switch_entity', document.getElementById(prefix + '_switch_entity').value);
       const styleEl = document.getElementById(prefix + '_switch_style');
       formData.append('switch_style', styleEl ? styleEl.value : '0');
+    } else if (typeValue === '6') {
+      formData.append('image_path', document.getElementById(prefix + '_image_path').value);
     }
     fetch('/api/tiles', { method:'POST', body:formData })
       .then(res => res.json())
@@ -913,7 +926,8 @@ void appendAdminScripts(String& html) {
     else if (tile.type === 5) {
       cls.push('switch');
       if (tile.switch_style === 1) cls.push('switch-toggle');
-    } else cls.push('empty');
+    } else if (tile.type === 6) cls.push('image');
+    else cls.push('empty');
     el.className = cls.join(' ');
     if (tile.type === 0) el.style.background = 'transparent';
     else if (tile.type === 1) el.style.background = tile.bg_color ? ('#' + ('000000' + tile.bg_color.toString(16)).slice(-6)) : '#2A2A2A';

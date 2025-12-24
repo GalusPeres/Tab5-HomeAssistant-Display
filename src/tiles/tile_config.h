@@ -11,7 +11,8 @@ enum TileType : uint8_t {
   TILE_SCENE = 2,
   TILE_KEY = 3,
   TILE_NAVIGATE = 4,
-  TILE_SWITCH = 5
+  TILE_SWITCH = 5,
+  TILE_IMAGE = 6
 };
 
 struct Tile {
@@ -33,6 +34,9 @@ struct Tile {
   String key_macro;          // Makro-String (z.B. "ctrl+g")
   uint8_t key_code;          // USB HID Scancode
   uint8_t key_modifier;      // Modifier bits (CTRL=0x01, SHIFT=0x02, ALT=0x04)
+
+  // Image-spezifisch
+  String image_path;         // SD-Karten Pfad (z.B. "/bild.png")
 
   Tile()
       : type(TILE_EMPTY),

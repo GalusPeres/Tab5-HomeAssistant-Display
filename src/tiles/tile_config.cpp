@@ -92,7 +92,13 @@ static void packTile(const Tile& in, PackedTile& out) {
   copyString(in.sensor_entity, out.sensor_entity, sizeof(out.sensor_entity));
   copyString(in.sensor_unit, out.sensor_unit, sizeof(out.sensor_unit));
   copyString(in.scene_alias, out.scene_alias, sizeof(out.scene_alias));
-  copyString(in.key_macro, out.key_macro, sizeof(out.key_macro));
+  // Element-Pool: TILE_IMAGE nutzt key_macro für image_path
+  copyString(in.key_macro.length() > 0 ? in.key_macro : in.image_path, out.key_macro, sizeof(out.key_macro));
+
+  if (in.type == TILE_IMAGE) {
+    Serial.printf("[TileConfig] packTile - TILE_IMAGE: image_path='%s', key_macro='%s', packed='%s'\n",
+                  in.image_path.c_str(), in.key_macro.c_str(), out.key_macro);
+  }
 }
 
 static void unpackTile(const PackedTile& in, Tile& out) {
@@ -108,6 +114,15 @@ static void unpackTile(const PackedTile& in, Tile& out) {
   out.sensor_unit = String(in.sensor_unit);
   out.scene_alias = String(in.scene_alias);
   out.key_macro = String(in.key_macro);
+  // Element-Pool: TILE_IMAGE nutzt key_macro für image_path
+  if (out.type == TILE_IMAGE) {
+    out.image_path = out.key_macro;
+    out.key_macro = "";
+    Serial.printf("[TileConfig] unpackTile - TILE_IMAGE: packed='%s', image_path='%s'\n",
+                  in.key_macro, out.image_path.c_str());
+  } else {
+    out.image_path = "";
+  }
 }
 
 static void unpackTileV1(const PackedTileV1& in, Tile& out) {
@@ -123,6 +138,13 @@ static void unpackTileV1(const PackedTileV1& in, Tile& out) {
   out.sensor_unit = String(in.sensor_unit);
   out.scene_alias = String(in.scene_alias);
   out.key_macro = String(in.key_macro);
+  // Element-Pool: TILE_IMAGE nutzt key_macro für image_path
+  if (out.type == TILE_IMAGE) {
+    out.image_path = out.key_macro;
+    out.key_macro = "";
+  } else {
+    out.image_path = "";
+  }
 }
 static bool buildBlobKey(const char* prefix, char* out, size_t out_len) {
   if (!prefix || !out || out_len < 8) return false;
