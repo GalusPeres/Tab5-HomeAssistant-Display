@@ -121,8 +121,6 @@ void UIManager::buildUI(scene_publish_cb_t scene_cb, hotspot_start_cb_t hotspot_
 
   // SIDEBAR ZUERST RENDERN (vor Tiles!)
   Serial.println("[UI] Rendere Sidebar...");
-  lv_timer_handler();          // Sidebar zeichnen (mit Platzhalter --:--)
-  delay(100);                  // Sicherstellen dass Sidebar fertig ist
   Serial.println("[UI] Sidebar fertig, lade nun Tiles...");
   // updateStatusbar() wird später in Loop aufgerufen wenn Fonts geladen sind
 

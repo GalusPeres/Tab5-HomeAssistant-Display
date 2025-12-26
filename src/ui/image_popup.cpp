@@ -58,6 +58,25 @@ void show_image_popup(const char* path) {
 
   Serial.printf("[ImagePopup] Zeige Bild: %s\n", fullPath.c_str());
 
+  g_current_image_path = "S:" + fullPath;
+  lv_image_header_t header;
+  if (lv_image_decoder_get_info(g_current_image_path.c_str(), &header) != LV_RESULT_OK) {
+    Serial.printf("[ImagePopup] LVGL kann Bild nicht dekodieren: %s\n", fullPath.c_str());
+
+    g_image_popup_overlay = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(g_image_popup_overlay, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(g_image_popup_overlay, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(g_image_popup_overlay, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(g_image_popup_overlay, 0, 0);
+    lv_obj_add_event_cb(g_image_popup_overlay, close_image_popup, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t* lbl = lv_label_create(g_image_popup_overlay);
+    lv_label_set_text_fmt(lbl, "Bildformat nicht unterstuetzt:\n%s", fullPath.c_str());
+    lv_obj_set_style_text_color(lbl, lv_color_white(), 0);
+    lv_obj_center(lbl);
+    return;
+  }
+
   // Schwarzer Hintergrund
   g_image_popup_overlay = lv_obj_create(lv_layer_top());
   lv_obj_set_size(g_image_popup_overlay, LV_PCT(100), LV_PCT(100));
@@ -69,11 +88,11 @@ void show_image_popup(const char* path) {
 
   // LVGL Image Widget
   g_image_popup_img = lv_img_create(g_image_popup_overlay);
-  g_current_image_path = "S:" + fullPath;
   lv_img_set_src(g_image_popup_img, g_current_image_path.c_str());
+  lv_image_set_antialias(g_image_popup_img, false);
 
-  // Resize Image auf Vollbild (1280x720)
-  lv_obj_set_size(g_image_popup_img, 1280, 720);
+  // Native size to avoid extra scaling work.
+  lv_obj_set_size(g_image_popup_img, header.w, header.h);
   lv_obj_center(g_image_popup_img);
 
   g_image_shown = true;

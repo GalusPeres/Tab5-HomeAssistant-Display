@@ -377,8 +377,8 @@ static void appendTileTabHTML(
               <label>Bildpfad (SD-Karte)</label>
               <input type="text" id=")html";
   html += tab_id;
-  html += R"html(_image_path" placeholder="/bild.png">
-              <div style="font-size:11px;color:#64748b;margin-top:4px;">Pfad zur PNG-Datei auf der SD-Karte (z.B. /bild.png)</div>
+  html += R"html(_image_path" placeholder="/bild.jpg">
+              <div style="font-size:11px;color:#64748b;margin-top:4px;">Pfad zur PNG- oder JPG-Datei auf der SD-Karte (z.B. /bild.jpg)</div>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:#64748b;gap:10px;">
               <span>Aenderungen werden automatisch gespeichert.</span>

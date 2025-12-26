@@ -3,6 +3,8 @@
 #include <Wire.h> // Wichtig
 #include <SPI.h>  // Wichtig für M5GFX
 #include <SD.h>   // SD Card Support
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #include "src/core/display_manager.h"
 #include "src/core/power_manager.h"
@@ -24,10 +26,25 @@
 // MDI Icons Font (48px, 4bpp) - definiert in mdi_icons_48.c
 LV_FONT_DECLARE(mdi_icons_48);
 
+// Mehr Stack fuer loopTask (verhindert Stack-Overflow bei lv_timer_handler).
+SET_LOOP_TASK_STACK_SIZE(16 * 1024);
+
 static uint32_t last_status_update = 0;
 static uint32_t ap_mode_started_at = 0;
 static const uint32_t AP_MODE_TIMEOUT_MS = 10UL * 60UL * 1000UL;
 static uint32_t ap_mode_disable_block_until = 0;
+static TaskHandle_t ui_build_waiter = nullptr;
+static scene_publish_cb_t ui_scene_cb = nullptr;
+static hotspot_start_cb_t ui_hotspot_cb = nullptr;
+
+static void build_ui_task(void* param) {
+  (void)param;
+  uiManager.buildUI(ui_scene_cb, ui_hotspot_cb);
+  if (ui_build_waiter) {
+    xTaskNotifyGive(ui_build_waiter);
+  }
+  vTaskDelete(nullptr);
+}
 
 static void set_hotspot_mode(bool enable) {
   if (enable) {
@@ -137,7 +154,14 @@ void setup() {
 
   Serial.println("[Setup] Building UI...");
   Serial.flush();
-  uiManager.buildUI(mqttPublishScene, set_hotspot_mode);
+  ui_scene_cb = mqttPublishScene;
+  ui_hotspot_cb = set_hotspot_mode;
+  ui_build_waiter = xTaskGetCurrentTaskHandle();
+  xTaskCreatePinnedToCore(build_ui_task, "buildUI", 24576, nullptr, 2, nullptr, ARDUINO_RUNNING_CORE);
+  if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(10000)) == 0) {
+    Serial.println("[Setup] WARNUNG: UI Build Timeout!");
+  }
+  ui_build_waiter = nullptr;
   Serial.println("[Setup] UI built");
   Serial.flush();
 
