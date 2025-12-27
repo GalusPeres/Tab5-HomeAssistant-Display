@@ -18,12 +18,17 @@ static bool g_input_enabled = true;
 static volatile uint16_t g_flush_log_budget = 0;
 static size_t g_buffer_lines = 0;
 static uint8_t g_bytes_per_pixel = 0;
+static lv_display_render_mode_t g_render_mode = LV_DISPLAY_RENDER_MODE_PARTIAL;
 
 void DisplayManager::debugFlushNext(uint16_t count) {
   g_flush_log_budget = count;
 }
 
 bool DisplayManager::setBufferLines(size_t lines) {
+  return setBufferLines(lines, LV_DISPLAY_RENDER_MODE_PARTIAL);
+}
+
+bool DisplayManager::setBufferLines(size_t lines, lv_display_render_mode_t render_mode) {
   if (!disp || lines == 0) {
     return false;
   }
@@ -33,13 +38,20 @@ bool DisplayManager::setBufferLines(size_t lines) {
       g_bytes_per_pixel = 2;
     }
   }
-  if (g_buffer_lines == lines) {
+  if (g_buffer_lines == lines && g_render_mode == render_mode) {
     return true;
   }
 
   lv_refr_now(disp);
 
   const size_t bytes = SCREEN_WIDTH * lines * g_bytes_per_pixel;
+  if (g_buffer_lines == lines && g_render_mode != render_mode) {
+    if (!buf1 || !buf2) return false;
+    lv_display_set_buffers(disp, buf1, buf2, bytes, render_mode);
+    g_render_mode = render_mode;
+    Serial.printf("[Display] Render-Mode umgestellt: %d (Zeilen=%d)\n", (int)render_mode, (int)lines);
+    return true;
+  }
   lv_color_t* new_buf1 = (lv_color_t*)heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
   lv_color_t* new_buf2 = (lv_color_t*)heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
   bool using_psram = true;
@@ -56,17 +68,26 @@ bool DisplayManager::setBufferLines(size_t lines) {
     return false;
   }
 
-  lv_display_set_buffers(disp, new_buf1, new_buf2, bytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
+  lv_display_set_buffers(disp, new_buf1, new_buf2, bytes, render_mode);
 
   if (buf1) heap_caps_free(buf1);
   if (buf2) heap_caps_free(buf2);
   buf1 = new_buf1;
   buf2 = new_buf2;
   g_buffer_lines = lines;
+  g_render_mode = render_mode;
 
   Serial.printf("[Display] DMA-Puffer umgestellt: 2x %d Bytes (je %d Zeilen, %s, %u Bpp)\n",
                 bytes, (int)lines, using_psram ? "PSRAM" : "SRAM", g_bytes_per_pixel);
   return true;
+}
+
+size_t DisplayManager::getBufferLines() const {
+  return g_buffer_lines;
+}
+
+lv_display_render_mode_t DisplayManager::getRenderMode() const {
+  return g_render_mode;
 }
 
 // ========== Display Flush Callback ==========

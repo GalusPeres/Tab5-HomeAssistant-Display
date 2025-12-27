@@ -4,6 +4,7 @@
 #include "src/ui/tab_settings.h"
 #include "src/ui/light_popup.h"
 #include "src/ui/sensor_popup.h"
+#include "src/ui/image_popup.h"
 #include "src/core/display_manager.h"
 #include "src/tiles/mdi_icons.h"
 #include "src/tiles/tile_config.h"
@@ -17,6 +18,15 @@
 #include <M5Unified.h>
 
 
+
+static void preload_image_tiles_from_grid(const TileGridConfig& grid) {
+  for (size_t i = 0; i < TILES_PER_GRID; ++i) {
+    const Tile& tile = grid.tiles[i];
+    if (tile.type != TILE_IMAGE) continue;
+    if (tile.image_path.length() == 0) continue;
+    preload_image_popup(tile.image_path.c_str());
+  }
+}
 
 // Globale Instanz
 
@@ -140,6 +150,9 @@ void UIManager::buildUI(scene_publish_cb_t scene_cb, hotspot_start_cb_t hotspot_
   tiles_reload_layout(GridType::TAB2);
   preload_light_popup();
   preload_sensor_popup();
+  preload_image_tiles_from_grid(tileConfig.getTab0Grid());
+  preload_image_tiles_from_grid(tileConfig.getTab1Grid());
+  preload_image_tiles_from_grid(tileConfig.getTab2Grid());
 
   // Warm settings buffer once to reduce the first-open hitch.
   switchToTab(3);

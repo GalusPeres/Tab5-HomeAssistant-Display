@@ -22,6 +22,8 @@ let reconnectTimer = null;
 let pingInterval = null;
 let connectionAttempts = 0;
 
+const startHidden = process.argv.includes('--hidden');
+
 // Tab5 WebSocket Verbindung
 let TAB5_IP = store.get('tab5_ip'); // Aus Settings laden
 const TAB5_PORT = 8081;
@@ -84,6 +86,7 @@ function createWindow() {
 
   // Fenster anzeigen wenn bereit (oder im Tray lassen)
   mainWindow.once('ready-to-show', () => {
+    if (startHidden) return;
     // Nur anzeigen wenn kein Tray Icon existiert
     if (!tray) {
       mainWindow.show();
@@ -311,11 +314,18 @@ ipcMain.on('set-tab5-ip', (event, ip) => {
 
 // Autostart Funktionen
 function setAutostart(enabled) {
-  app.setLoginItemSettings({
+  const loginItem = {
     openAtLogin: enabled,
-    openAsHidden: true,  // Im Tray starten
+    openAsHidden: true,
     args: ['--hidden']
-  });
+  };
+
+  if (!app.isPackaged) {
+    loginItem.path = process.execPath;
+    loginItem.args = [app.getAppPath(), '--hidden'];
+  }
+
+  app.setLoginItemSettings(loginItem);
   store.set('autostart', enabled);
   log(`Autostart ${enabled ? 'enabled' : 'disabled'}`);
 }
