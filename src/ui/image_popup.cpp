@@ -34,6 +34,10 @@ static const char* kSlideshowTokenAll = "__slideshow_all__";
 static lv_timer_t* g_slideshow_timer = nullptr;
 static constexpr uint16_t kDefaultSlideshowSec = 10;
 static constexpr uint16_t kMaxSlideshowSec = 3600;
+static constexpr uint16_t kDefaultUrlCacheSec = 3600;
+static constexpr uint32_t kOpenUrlCacheIntervalMs = 30UL * 1000UL;
+static constexpr uint32_t kOpenUrlUpdateDelayMs = 200UL;
+static constexpr uint32_t kPopupRestoreDelayMs = 400UL;
 static uint32_t g_slideshow_interval_ms = 1000U * kDefaultSlideshowSec;
 static lv_timer_t* g_popup_restore_timer = nullptr;
 static std::vector<String> g_slideshow_files;
@@ -47,15 +51,19 @@ static uint8_t* g_image_ram_buf = nullptr;
 static size_t g_image_ram_buf_size = 0;
 static bool g_image_ram_active = false;
 static String g_image_ram_source;
+static String g_open_url;
+static uint32_t g_open_url_update_due_ms = 0;
+static uint32_t g_open_url_flush_seq = 0;
 static const char* kUrlCacheDir = "/_url_cache";
-static constexpr uint32_t kUrlCacheIntervalMs = 30UL * 1000UL;
+static constexpr uint32_t kUrlCacheIntervalMs = 1000UL;
 static constexpr uint32_t kUrlCacheInitialDelayMs = 30UL * 1000UL;
 static uint32_t g_url_cache_next_ms = 0;
 
 struct UrlCacheEntry {
   String url;
   String bin_path;
-  uint32_t last_update_ms = 0;
+  uint32_t interval_ms = 0;
+  uint32_t next_due_ms = 0;
 };
 
 static std::vector<UrlCacheEntry> g_url_cache_entries;
@@ -63,6 +71,14 @@ static QueueHandle_t g_url_cache_queue = nullptr;
 static QueueHandle_t g_url_cache_done_queue = nullptr;
 static TaskHandle_t g_url_cache_task = nullptr;
 static bool g_url_cache_worker_ready = false;
+static portMUX_TYPE g_url_cache_mux = portMUX_INITIALIZER_UNLOCKED;
+static std::vector<String> g_url_cache_queued;
+static std::vector<String> g_url_cache_inflight;
+struct UrlCancelEntry {
+  uint32_t hash;
+  uint16_t len;
+};
+static std::vector<UrlCancelEntry> g_url_cache_cancel;
 static constexpr size_t kUrlJobMaxLen = 256;
 static constexpr UBaseType_t kUrlQueueLen = 32;
 
@@ -77,11 +93,18 @@ static void free_image_ram();
 static String make_url_cache_bin_path(const String& url);
 static void register_url_cache_entry(const String& url);
 static bool update_url_cache(const String& url, String& out_bin_path, String& error);
-static void refresh_url_cache_entries();
+static void refresh_url_cache_entries(uint32_t now);
 static void ensure_url_cache_worker();
 static bool enqueue_url_job(const String& url);
 static void url_cache_yield();
 static void process_url_cache_done();
+static void mark_url_cache_queued(const String& url, uint32_t now);
+static bool url_list_contains(const std::vector<String>& list, const String& url);
+static void url_list_remove(std::vector<String>& list, const String& url);
+static void request_url_cache_cancel(const String& url);
+static void clear_url_cache_cancel(const String& url);
+static bool url_cache_should_cancel(uint32_t hash, uint16_t len);
+static void url_cache_consume_cancel(uint32_t hash, uint16_t len);
 
 static void close_image_popup(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
@@ -306,13 +329,19 @@ static bool write_bin_file(const String& bin_path, const lv_image_header_t& head
   return true;
 }
 
-static bool download_url_to_sd(const String& url, const String& target_base, String& out_path, String& error) {
+static bool download_url_to_sd(const String& url, const String& target_base, String& out_path, String& error,
+                               uint32_t cancel_hash, uint16_t cancel_len) {
   HTTPClient http;
   bool https = false;
   String host;
   uint16_t port = 0;
   String path;
   if (!parse_url(url, https, host, port, path, error)) return false;
+  if (url_cache_should_cancel(cancel_hash, cancel_len)) {
+    error = "Abgebrochen";
+    url_cache_consume_cancel(cancel_hash, cancel_len);
+    return false;
+  }
   if (!ensure_url_cache_dir()) {
     error = "Cache Ordner Fehler";
     return false;
@@ -385,6 +414,14 @@ static bool download_url_to_sd(const String& url, const String& target_base, Str
   int remaining = http.getSize();
   uint8_t buffer[1024];
   while (http.connected() && (remaining > 0 || remaining == -1)) {
+    if (url_cache_should_cancel(cancel_hash, cancel_len)) {
+      error = "Abgebrochen";
+      f.close();
+      http.end();
+      SD.remove(out_path);
+      url_cache_consume_cancel(cancel_hash, cancel_len);
+      return false;
+    }
     size_t available = stream->available();
     if (available) {
       int read_len = stream->readBytes(buffer, available > sizeof(buffer) ? sizeof(buffer) : available);
@@ -400,6 +437,12 @@ static bool download_url_to_sd(const String& url, const String& target_base, Str
 
   f.close();
   http.end();
+  if (url_cache_should_cancel(cancel_hash, cancel_len)) {
+    error = "Abgebrochen";
+    SD.remove(out_path);
+    url_cache_consume_cancel(cancel_hash, cancel_len);
+    return false;
+  }
   if (!SD.exists(out_path)) {
     error = "Download fehlgeschlagen";
     return false;
@@ -411,6 +454,91 @@ static uint32_t normalize_slideshow_interval_ms(uint16_t sec) {
   if (sec == 0) sec = kDefaultSlideshowSec;
   if (sec > kMaxSlideshowSec) sec = kMaxSlideshowSec;
   return static_cast<uint32_t>(sec) * 1000;
+}
+
+static uint32_t normalize_url_cache_interval_ms(uint16_t sec) {
+  if (sec == 0) sec = kDefaultUrlCacheSec;
+  if (sec > kMaxSlideshowSec) sec = kMaxSlideshowSec;
+  return static_cast<uint32_t>(sec) * 1000;
+}
+
+static bool url_list_contains(const std::vector<String>& list, const String& url) {
+  for (const auto& entry : list) {
+    if (entry == url) return true;
+  }
+  return false;
+}
+
+static void url_list_remove(std::vector<String>& list, const String& url) {
+  for (auto it = list.begin(); it != list.end(); ++it) {
+    if (*it == url) {
+      list.erase(it);
+      return;
+    }
+  }
+}
+
+static void request_url_cache_cancel(const String& url) {
+  String normalized = url;
+  normalized.trim();
+  if (!is_url_path(normalized)) return;
+  uint32_t hash = hash_url(normalized);
+  portENTER_CRITICAL(&g_url_cache_mux);
+  bool pending = url_list_contains(g_url_cache_queued, normalized) || url_list_contains(g_url_cache_inflight, normalized);
+  if (pending) {
+    uint16_t len = static_cast<uint16_t>(normalized.length());
+    bool exists = false;
+    for (const auto& entry : g_url_cache_cancel) {
+      if (entry.hash == hash && entry.len == len) {
+        exists = true;
+        break;
+      }
+    }
+    if (!exists) {
+      g_url_cache_cancel.push_back({hash, len});
+    }
+  }
+  portEXIT_CRITICAL(&g_url_cache_mux);
+}
+
+static void clear_url_cache_cancel(const String& url) {
+  String normalized = url;
+  normalized.trim();
+  if (!is_url_path(normalized)) return;
+  uint32_t hash = hash_url(normalized);
+  portENTER_CRITICAL(&g_url_cache_mux);
+  uint16_t len = static_cast<uint16_t>(normalized.length());
+  for (auto it = g_url_cache_cancel.begin(); it != g_url_cache_cancel.end(); ++it) {
+    if (it->hash == hash && it->len == len) {
+      g_url_cache_cancel.erase(it);
+      break;
+    }
+  }
+  portEXIT_CRITICAL(&g_url_cache_mux);
+}
+
+static bool url_cache_should_cancel(uint32_t hash, uint16_t len) {
+  bool cancel = false;
+  portENTER_CRITICAL(&g_url_cache_mux);
+  for (const auto& entry : g_url_cache_cancel) {
+    if (entry.hash == hash && entry.len == len) {
+      cancel = true;
+      break;
+    }
+  }
+  portEXIT_CRITICAL(&g_url_cache_mux);
+  return cancel;
+}
+
+static void url_cache_consume_cancel(uint32_t hash, uint16_t len) {
+  portENTER_CRITICAL(&g_url_cache_mux);
+  for (auto it = g_url_cache_cancel.begin(); it != g_url_cache_cancel.end(); ++it) {
+    if (it->hash == hash && it->len == len) {
+      g_url_cache_cancel.erase(it);
+      break;
+    }
+  }
+  portEXIT_CRITICAL(&g_url_cache_mux);
 }
 
 static void cancel_popup_restore() {
@@ -428,7 +556,7 @@ static void popup_restore_cb(lv_timer_t*) {
 
 static void schedule_popup_restore() {
   cancel_popup_restore();
-  g_popup_restore_timer = lv_timer_create(popup_restore_cb, 60, nullptr);
+  g_popup_restore_timer = lv_timer_create(popup_restore_cb, kPopupRestoreDelayMs, nullptr);
 }
 
 static void stop_slideshow(bool restore_display) {
@@ -464,6 +592,9 @@ struct JpegDecodeContext {
   uint16_t* x_end;
   uint16_t* y_start;
   uint16_t* y_end;
+  bool cancel_active;
+  uint32_t cancel_hash;
+  uint16_t cancel_len;
 };
 
 static size_t tjpgd_input(JDEC* jd, uint8_t* buff, size_t ndata) {
@@ -479,6 +610,7 @@ static int tjpgd_output(JDEC* jd, void* bitmap, JRECT* rect) {
   JpegDecodeContext* ctx = static_cast<JpegDecodeContext*>(jd->device);
   if (!ctx || !ctx->dst_buf || !ctx->x_start || !ctx->x_end || !ctx->y_start || !ctx->y_end) return 0;
   if (!bitmap || !rect) return 0;
+  if (ctx->cancel_active && url_cache_should_cancel(ctx->cancel_hash, ctx->cancel_len)) return 0;
 
   const uint16_t rect_w = rect->right - rect->left + 1;
   const uint16_t rect_h = rect->bottom - rect->top + 1;
@@ -564,6 +696,9 @@ static bool decode_jpeg_to_ram(const String& fullPath, lv_image_header_t& header
   JDEC jd;
   JpegDecodeContext ctx{};
   ctx.file = &f;
+  ctx.cancel_active = false;
+  ctx.cancel_hash = 0;
+  ctx.cancel_len = 0;
 
   JRESULT rc = jd_prepare(&jd, tjpgd_input, work, kJpegWorkbufSize, &ctx);
   if (rc != JDR_OK) {
@@ -668,7 +803,8 @@ static bool decode_jpeg_to_ram(const String& fullPath, lv_image_header_t& header
   return true;
 }
 
-static bool decode_jpeg_to_buffer(const String& fullPath, uint8_t*& out_buf, size_t& out_size, uint16_t& out_w, uint16_t& out_h, String& error) {
+static bool decode_jpeg_to_buffer(const String& fullPath, uint8_t*& out_buf, size_t& out_size, uint16_t& out_w,
+                                  uint16_t& out_h, String& error, uint32_t cancel_hash, uint16_t cancel_len) {
   out_buf = nullptr;
   out_size = 0;
   out_w = 0;
@@ -689,6 +825,9 @@ static bool decode_jpeg_to_buffer(const String& fullPath, uint8_t*& out_buf, siz
   JDEC jd;
   JpegDecodeContext ctx{};
   ctx.file = &f;
+  ctx.cancel_active = true;
+  ctx.cancel_hash = cancel_hash;
+  ctx.cancel_len = cancel_len;
 
   JRESULT rc = jd_prepare(&jd, tjpgd_input, work, kJpegWorkbufSize, &ctx);
   if (rc != JDR_OK) {
@@ -744,6 +883,18 @@ static bool decode_jpeg_to_buffer(const String& fullPath, uint8_t*& out_buf, siz
     if (end >= ctx.dst_w) end = ctx.dst_w - 1;
     ctx.x_start[x] = static_cast<uint16_t>(start);
     ctx.x_end[x] = static_cast<uint16_t>(end);
+    if ((x & 0x3F) == 0 && url_cache_should_cancel(cancel_hash, cancel_len)) {
+      heap_caps_free(ctx.x_start);
+      heap_caps_free(ctx.x_end);
+      heap_caps_free(ctx.y_start);
+      heap_caps_free(ctx.y_end);
+      heap_caps_free(ctx.dst_buf);
+      heap_caps_free(work);
+      f.close();
+      error = "Abgebrochen";
+      url_cache_consume_cancel(cancel_hash, cancel_len);
+      return false;
+    }
   }
   for (uint16_t y = 0; y < ctx.src_h; ++y) {
     uint32_t start = (static_cast<uint32_t>(y) * ctx.dst_h) / ctx.src_h;
@@ -755,6 +906,18 @@ static bool decode_jpeg_to_buffer(const String& fullPath, uint8_t*& out_buf, siz
     if (end >= ctx.dst_h) end = ctx.dst_h - 1;
     ctx.y_start[y] = static_cast<uint16_t>(start);
     ctx.y_end[y] = static_cast<uint16_t>(end);
+    if ((y & 0x3F) == 0 && url_cache_should_cancel(cancel_hash, cancel_len)) {
+      heap_caps_free(ctx.x_start);
+      heap_caps_free(ctx.x_end);
+      heap_caps_free(ctx.y_start);
+      heap_caps_free(ctx.y_end);
+      heap_caps_free(ctx.dst_buf);
+      heap_caps_free(work);
+      f.close();
+      error = "Abgebrochen";
+      url_cache_consume_cancel(cancel_hash, cancel_len);
+      return false;
+    }
   }
 
   rc = jd_decomp(&jd, tjpgd_output, 0);
@@ -767,6 +930,12 @@ static bool decode_jpeg_to_buffer(const String& fullPath, uint8_t*& out_buf, siz
   f.close();
 
   if (rc != JDR_OK) {
+    if (rc == JDR_INTR && url_cache_should_cancel(cancel_hash, cancel_len)) {
+      heap_caps_free(ctx.dst_buf);
+      error = "Abgebrochen";
+      url_cache_consume_cancel(cancel_hash, cancel_len);
+      return false;
+    }
     heap_caps_free(ctx.dst_buf);
     error = "JPEG Decode Fehler";
     return false;
@@ -779,12 +948,13 @@ static bool decode_jpeg_to_buffer(const String& fullPath, uint8_t*& out_buf, siz
   return true;
 }
 
-static bool convert_jpeg_to_bin(const String& jpeg_path, const String& bin_path, String& error) {
+static bool convert_jpeg_to_bin(const String& jpeg_path, const String& bin_path, String& error,
+                                uint32_t cancel_hash, uint16_t cancel_len) {
   uint8_t* buf = nullptr;
   size_t buf_size = 0;
   uint16_t w = 0;
   uint16_t h = 0;
-  if (!decode_jpeg_to_buffer(jpeg_path, buf, buf_size, w, h, error)) return false;
+  if (!decode_jpeg_to_buffer(jpeg_path, buf, buf_size, w, h, error, cancel_hash, cancel_len)) return false;
   lv_image_header_t bin_header{};
   bin_header.magic = LV_IMAGE_HEADER_MAGIC;
   bin_header.cf = LV_COLOR_FORMAT_RGB565_SWAPPED;
@@ -793,6 +963,12 @@ static bool convert_jpeg_to_bin(const String& jpeg_path, const String& bin_path,
   bin_header.h = h;
   bin_header.stride = w * 2U;
   bin_header.reserved_2 = 0;
+  if (url_cache_should_cancel(cancel_hash, cancel_len)) {
+    heap_caps_free(buf);
+    error = "Abgebrochen";
+    url_cache_consume_cancel(cancel_hash, cancel_len);
+    return false;
+  }
   bool ok = write_bin_file(bin_path, bin_header, buf, buf_size, error);
   heap_caps_free(buf);
   return ok;
@@ -803,13 +979,26 @@ static bool update_url_cache(const String& url, String& out_bin_path, String& er
     error = "SD fehlt";
     return false;
   }
+  uint32_t cancel_hash = hash_url(url);
+  uint16_t cancel_len = static_cast<uint16_t>(url.length());
+  if (url_cache_should_cancel(cancel_hash, cancel_len)) {
+    error = "Abgebrochen";
+    url_cache_consume_cancel(cancel_hash, cancel_len);
+    return false;
+  }
   if (!ensure_url_cache_dir()) {
     error = "Cache Ordner Fehler";
     return false;
   }
   String base = make_url_cache_base(url);
   String download_path;
-  if (!download_url_to_sd(url, base, download_path, error)) return false;
+  if (!download_url_to_sd(url, base, download_path, error, cancel_hash, cancel_len)) return false;
+  if (url_cache_should_cancel(cancel_hash, cancel_len)) {
+    error = "Abgebrochen";
+    SD.remove(download_path);
+    url_cache_consume_cancel(cancel_hash, cancel_len);
+    return false;
+  }
   if (!ends_with_ignore_case(download_path, ".jpg") && !ends_with_ignore_case(download_path, ".jpeg")) {
     SD.remove(download_path);
     error = "Nur JPEG unterstuetzt";
@@ -817,8 +1006,15 @@ static bool update_url_cache(const String& url, String& out_bin_path, String& er
   }
   String bin_path = base + ".bin";
   String tmp_path = bin_path + ".tmp";
-  if (!convert_jpeg_to_bin(download_path, tmp_path, error)) {
+  if (!convert_jpeg_to_bin(download_path, tmp_path, error, cancel_hash, cancel_len)) {
     SD.remove(download_path);
+    return false;
+  }
+  if (url_cache_should_cancel(cancel_hash, cancel_len)) {
+    error = "Abgebrochen";
+    SD.remove(tmp_path);
+    SD.remove(download_path);
+    url_cache_consume_cancel(cancel_hash, cancel_len);
     return false;
   }
   if (SD.exists(bin_path)) SD.remove(bin_path);
@@ -846,24 +1042,47 @@ static void register_url_cache_entry(const String& url) {
   g_url_cache_entries.push_back(entry);
 }
 
-static void refresh_url_cache_entries() {
+static void refresh_url_cache_entries(uint32_t now) {
   std::vector<UrlCacheEntry> updated;
-  auto add_entry = [&](const String& url) {
+  auto add_entry = [&](const String& url, uint32_t interval_ms) {
     String normalized = url;
     normalized.trim();
     if (!is_url_path(normalized)) return;
-    for (const auto& entry : updated) {
-      if (entry.url == normalized) return;
+    for (auto& entry : updated) {
+      if (entry.url == normalized) {
+        if (interval_ms > 0 && (entry.interval_ms == 0 || interval_ms < entry.interval_ms)) {
+          entry.interval_ms = interval_ms;
+          uint32_t min_due = now + interval_ms;
+          if (entry.next_due_ms == 0 || (int32_t)(entry.next_due_ms - min_due) > 0) {
+            entry.next_due_ms = min_due;
+          }
+        }
+        return;
+      }
     }
     for (const auto& entry : g_url_cache_entries) {
       if (entry.url == normalized) {
-        updated.push_back(entry);
+        UrlCacheEntry copy = entry;
+        if (interval_ms > 0 && (copy.interval_ms == 0 || interval_ms < copy.interval_ms)) {
+          copy.interval_ms = interval_ms;
+        }
+        if (copy.next_due_ms == 0) {
+          copy.next_due_ms = now + kUrlCacheInitialDelayMs;
+        } else if (interval_ms > 0) {
+          uint32_t min_due = now + interval_ms;
+          if ((int32_t)(copy.next_due_ms - min_due) > 0) {
+            copy.next_due_ms = min_due;
+          }
+        }
+        updated.push_back(copy);
         return;
       }
     }
     UrlCacheEntry entry;
     entry.url = normalized;
     entry.bin_path = make_url_cache_bin_path(normalized);
+    entry.interval_ms = interval_ms;
+    entry.next_due_ms = now + kUrlCacheInitialDelayMs;
     updated.push_back(entry);
   };
 
@@ -876,7 +1095,12 @@ static void refresh_url_cache_entries() {
     for (size_t i = 0; i < TILES_PER_GRID; ++i) {
       const Tile& tile = grid->tiles[i];
       if (tile.type != TILE_IMAGE) continue;
-      add_entry(tile.image_path);
+      if (!is_url_path(tile.image_path)) continue;
+      uint32_t interval_ms = normalize_url_cache_interval_ms(tile.image_slideshow_sec);
+      if (g_open_url.length() > 0 && g_open_url == tile.image_path) {
+        interval_ms = kOpenUrlCacheIntervalMs;
+      }
+      add_entry(tile.image_path, interval_ms);
     }
   }
   g_url_cache_entries.swap(updated);
@@ -888,11 +1112,26 @@ static void url_cache_worker(void*) {
     if (xQueueReceive(g_url_cache_queue, &job, portMAX_DELAY) != pdTRUE) continue;
     if (!job.url[0]) continue;
     String url = String(job.url);
+    uint32_t cancel_hash = hash_url(url);
+    uint16_t cancel_len = static_cast<uint16_t>(url.length());
+    portENTER_CRITICAL(&g_url_cache_mux);
+    url_list_remove(g_url_cache_queued, url);
+    if (!url_list_contains(g_url_cache_inflight, url)) {
+      g_url_cache_inflight.push_back(url);
+    }
+    portEXIT_CRITICAL(&g_url_cache_mux);
     String err;
     String out_bin;
     Serial.printf("[ImagePopup] URL Cache Worker: %s\n", url.c_str());
-    if (!update_url_cache(url, out_bin, err)) {
-      Serial.printf("[ImagePopup] URL Cache Fehler: %s -> %s\n", url.c_str(), err.c_str());
+    if (url_cache_should_cancel(cancel_hash, cancel_len)) {
+      Serial.printf("[ImagePopup] URL Cache Abbruch: %s\n", url.c_str());
+      url_cache_consume_cancel(cancel_hash, cancel_len);
+    } else if (!update_url_cache(url, out_bin, err)) {
+      if (err == "Abgebrochen") {
+        Serial.printf("[ImagePopup] URL Cache Abbruch: %s\n", url.c_str());
+      } else {
+        Serial.printf("[ImagePopup] URL Cache Fehler: %s -> %s\n", url.c_str(), err.c_str());
+      }
     } else {
       Serial.printf("[ImagePopup] URL Cache OK: %s\n", out_bin.c_str());
       if (g_url_cache_done_queue) {
@@ -901,6 +1140,9 @@ static void url_cache_worker(void*) {
         xQueueSend(g_url_cache_done_queue, &done, 0);
       }
     }
+    portENTER_CRITICAL(&g_url_cache_mux);
+    url_list_remove(g_url_cache_inflight, url);
+    portEXIT_CRITICAL(&g_url_cache_mux);
   }
 }
 
@@ -924,10 +1166,48 @@ static void ensure_url_cache_worker() {
 static bool enqueue_url_job(const String& url) {
   ensure_url_cache_worker();
   if (!g_url_cache_worker_ready || !g_url_cache_queue) return false;
+  String normalized = url;
+  normalized.trim();
+  if (!is_url_path(normalized)) return false;
+  bool already = false;
+  portENTER_CRITICAL(&g_url_cache_mux);
+  if (url_list_contains(g_url_cache_inflight, normalized) || url_list_contains(g_url_cache_queued, normalized)) {
+    already = true;
+  } else {
+    g_url_cache_queued.push_back(normalized);
+  }
+  portEXIT_CRITICAL(&g_url_cache_mux);
+  if (already) return false;
+
   UrlJob job{};
-  url.toCharArray(job.url, sizeof(job.url));
-  if (!job.url[0]) return false;
-  return xQueueSend(g_url_cache_queue, &job, 0) == pdTRUE;
+  normalized.toCharArray(job.url, sizeof(job.url));
+  if (!job.url[0]) {
+    portENTER_CRITICAL(&g_url_cache_mux);
+    url_list_remove(g_url_cache_queued, normalized);
+    portEXIT_CRITICAL(&g_url_cache_mux);
+    return false;
+  }
+  if (xQueueSend(g_url_cache_queue, &job, 0) != pdTRUE) {
+    portENTER_CRITICAL(&g_url_cache_mux);
+    url_list_remove(g_url_cache_queued, normalized);
+    portEXIT_CRITICAL(&g_url_cache_mux);
+    return false;
+  }
+  return true;
+}
+
+static void mark_url_cache_queued(const String& url, uint32_t now) {
+  String normalized = url;
+  normalized.trim();
+  if (!is_url_path(normalized)) return;
+  for (auto& entry : g_url_cache_entries) {
+    if (entry.url == normalized) {
+      uint32_t interval_ms = entry.interval_ms;
+      if (interval_ms == 0) interval_ms = normalize_url_cache_interval_ms(0);
+      entry.next_due_ms = now + interval_ms;
+      return;
+    }
+  }
 }
 
 static void collect_images(const String& dir, std::vector<String>& out, size_t max_entries, uint8_t depth, bool allow_bin, bool allow_jpeg) {
@@ -1039,6 +1319,8 @@ static void process_url_cache_done() {
     String url = String(job.url);
     String cached = make_url_cache_bin_path(url);
     String cached_src = "S:" + cached;
+    lv_image_cache_drop(cached_src.c_str());
+    lv_image_header_cache_drop(cached_src.c_str());
     if (g_image_shown && g_current_image_path == cached_src) {
       apply_slideshow_display_mode(true);
       displayManager.setReverseFlushOnce();
@@ -1114,6 +1396,12 @@ void show_image_popup(const char* path, uint16_t slideshow_sec) {
   hide_light_popup();
 
   if (!ensure_sd_ready()) {
+    if (g_open_url.length() > 0) {
+      request_url_cache_cancel(g_open_url);
+    }
+    g_open_url = "";
+    g_open_url_update_due_ms = 0;
+    g_open_url_flush_seq = 0;
     show_image_popup_error("SD Karte fehlt", "/");
     return;
   }
@@ -1121,8 +1409,15 @@ void show_image_popup(const char* path, uint16_t slideshow_sec) {
   String rawPath = String(path);
   rawPath.trim();
   if (is_url_path(rawPath)) {
+    if (g_open_url.length() > 0 && g_open_url != rawPath) {
+      request_url_cache_cancel(g_open_url);
+    }
+    clear_url_cache_cancel(rawPath);
+    g_open_url = rawPath;
     register_url_cache_entry(rawPath);
     ensure_url_cache_worker();
+    uint32_t now = millis();
+    refresh_url_cache_entries(now);
     stop_slideshow(true);
     apply_slideshow_display_mode(true);
     displayManager.setReverseFlushOnce();
@@ -1135,18 +1430,30 @@ void show_image_popup(const char* path, uint16_t slideshow_sec) {
       }
       Serial.printf("[ImagePopup] URL Cache fehlte, Queue: %s\n", rawPath.c_str());
       enqueue_url_job(rawPath);
+      mark_url_cache_queued(rawPath, now);
       show_image_popup_error("URL Cache wird erstellt", rawPath.c_str());
       apply_slideshow_display_mode(false);
       return;
     }
     if (WiFi.status() == WL_CONNECTED) {
-      enqueue_url_job(rawPath);
+      g_open_url_update_due_ms = now + kOpenUrlUpdateDelayMs;
+      g_open_url_flush_seq = displayManager.getFullScreenFlushSeq();
+      mark_url_cache_queued(rawPath, now);
+    } else {
+      g_open_url_update_due_ms = 0;
+      g_open_url_flush_seq = 0;
     }
     Serial.printf("[ImagePopup] Zeige URL Cache: %s\n", cached.c_str());
     show_image_popup_internal(cached, true, false);
     return;
   }
 
+  if (g_open_url.length() > 0) {
+    request_url_cache_cancel(g_open_url);
+  }
+  g_open_url = "";
+  g_open_url_update_due_ms = 0;
+  g_open_url_flush_seq = 0;
   String fullPath = normalize_sd_path(rawPath);
   SlideshowMode mode = get_slideshow_mode(fullPath);
   if (mode != SlideshowMode::None) {
@@ -1169,6 +1476,12 @@ void hide_image_popup() {
     apply_slideshow_display_mode(true);
     displayManager.setReverseFlushOnce();
     lv_obj_add_flag(g_image_popup_overlay, LV_OBJ_FLAG_HIDDEN);
+    if (g_open_url.length() > 0) {
+      request_url_cache_cancel(g_open_url);
+    }
+    g_open_url = "";
+    g_open_url_update_due_ms = 0;
+    g_open_url_flush_seq = 0;
     g_image_shown = false;
     free_image_ram();
     schedule_popup_restore();
@@ -1218,6 +1531,17 @@ void image_popup_service_url_cache() {
   if (WiFi.status() != WL_CONNECTED) return;
 
   uint32_t now = millis();
+  if (g_open_url_update_due_ms != 0 && (int32_t)(now - g_open_url_update_due_ms) >= 0) {
+    if (g_open_url.length() > 0) {
+      uint32_t flush_seq = displayManager.getFullScreenFlushSeq();
+      if (flush_seq != g_open_url_flush_seq) {
+        enqueue_url_job(g_open_url);
+        mark_url_cache_queued(g_open_url, now);
+        g_open_url_flush_seq = flush_seq;
+      }
+    }
+    g_open_url_update_due_ms = 0;
+  }
   if (g_url_cache_next_ms == 0) {
     g_url_cache_next_ms = now + kUrlCacheInitialDelayMs;
     return;
@@ -1225,15 +1549,24 @@ void image_popup_service_url_cache() {
   if ((int32_t)(now - g_url_cache_next_ms) < 0) return;
 
   ensure_url_cache_worker();
-  refresh_url_cache_entries();
+  refresh_url_cache_entries(now);
   if (g_url_cache_entries.empty()) {
     g_url_cache_next_ms = now + kUrlCacheIntervalMs;
     return;
   }
 
-  Serial.printf("[ImagePopup] URL Cache Queue (%u)\n", static_cast<unsigned int>(g_url_cache_entries.size()));
-  for (const auto& entry : g_url_cache_entries) {
+  uint32_t queued = 0;
+  for (auto& entry : g_url_cache_entries) {
+    uint32_t interval_ms = entry.interval_ms;
+    if (interval_ms == 0) interval_ms = normalize_url_cache_interval_ms(0);
+    if (entry.next_due_ms == 0) entry.next_due_ms = now + kUrlCacheInitialDelayMs;
+    if ((int32_t)(now - entry.next_due_ms) < 0) continue;
     enqueue_url_job(entry.url);
+    entry.next_due_ms = now + interval_ms;
+    queued++;
+  }
+  if (queued > 0) {
+    Serial.printf("[ImagePopup] URL Cache Queue (%u)\n", static_cast<unsigned int>(queued));
   }
   g_url_cache_next_ms = millis() + kUrlCacheIntervalMs;
 }

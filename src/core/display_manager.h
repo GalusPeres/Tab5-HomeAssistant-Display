@@ -31,6 +31,7 @@ public:
   bool setBufferLines(size_t lines, lv_display_render_mode_t render_mode);
   size_t getBufferLines() const;
   lv_display_render_mode_t getRenderMode() const;
+  uint32_t getFullScreenFlushSeq() const;
 
 private:
   static lv_display_t *disp;

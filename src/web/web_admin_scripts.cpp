@@ -172,6 +172,8 @@ void appendAdminScripts(String& html) {
   const slideshowTokenBin = '__slideshow_bin__';
   const slideshowTokenJpeg = '__slideshow_jpeg__';
   const imageUrlToken = '__url__';
+  const urlIntervalDefault = '3600';
+  const slideshowIntervalDefault = '10';
   let sdImageList = [];
   let sdImageListLoaded = false;
   function isImageUrl(value) {
@@ -308,6 +310,17 @@ void appendAdminScripts(String& html) {
     if (!wrap) return;
     const show = selectedValue === imageUrlToken || isImageUrl(currentPath || '');
     wrap.style.display = show ? 'block' : 'none';
+    const label = document.getElementById(prefix + '_image_interval_label');
+    if (label) {
+      label.textContent = show ? 'URL Cache Intervall (Sekunden)' : 'Diashow Intervall (Sekunden)';
+    }
+    const intervalInput = document.getElementById(prefix + '_image_slideshow_sec');
+    if (show && intervalInput) {
+      const val = String(intervalInput.value || '').trim();
+      if (val === '' || val === slideshowIntervalDefault) {
+        intervalInput.value = urlIntervalDefault;
+      }
+    }
   }
 
   function persistDrafts() { try { localStorage.setItem('tileDrafts', JSON.stringify(drafts)); } catch (e) {} }

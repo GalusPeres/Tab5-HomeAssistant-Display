@@ -25,6 +25,7 @@ static lv_color_t* g_reverse_buf = nullptr;
 static size_t g_reverse_buf_width = 0;
 static constexpr size_t kReverseStripeWidth = 16;
 static bool g_reverse_flush_once = false;
+static volatile uint32_t g_fullscreen_flush_seq = 0;
 
 static bool ensure_reverse_buf() {
   if (g_reverse_buf && g_reverse_buf_width == kReverseStripeWidth) return true;
@@ -142,6 +143,10 @@ lv_display_render_mode_t DisplayManager::getRenderMode() const {
   return g_render_mode;
 }
 
+uint32_t DisplayManager::getFullScreenFlushSeq() const {
+  return g_fullscreen_flush_seq;
+}
+
 // ========== Display Flush Callback ==========
 // IRAM_ATTR: Diese Funktion wird SEHR oft aufgerufen (jeder Frame!)
 // Durch IRAM wird sie aus schnellem internen RAM ausgefuehrt (keine Cache-Misses)
@@ -177,10 +182,14 @@ void IRAM_ATTR DisplayManager::flush_cb(lv_display_t *lv_disp, const lv_area_t *
       g_reverse_flush = false;
       g_reverse_flush_once = false;
     }
+    g_fullscreen_flush_seq++;
     lv_display_flush_ready(lv_disp);
     return;
   }
   M5.Display.pushImageDMA(area->x1, area->y1, w, h, (uint16_t*)px_map);
+  if (area->x1 == 0 && area->y1 == 0 && w == SCREEN_WIDTH && h == SCREEN_HEIGHT) {
+    g_fullscreen_flush_seq++;
+  }
   lv_display_flush_ready(lv_disp);
 }
 

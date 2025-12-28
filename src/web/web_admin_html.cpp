@@ -387,7 +387,9 @@ static void appendTileTabHTML(
   html += tab_id;
   html += R"html(_image_url" placeholder="https://example.com/bild.jpg">
               </div>
-              <label>Diashow Intervall (Sekunden)</label>
+              <label id=")html";
+  html += tab_id;
+  html += R"html(_image_interval_label">Diashow Intervall (Sekunden)</label>
               <input type="number" min="1" max="3600" step="1" id=")html";
   html += tab_id;
   html += R"html(_image_slideshow_sec" value="10">
