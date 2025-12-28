@@ -2,14 +2,22 @@
 #include "sensor_popup.h"
 #include "light_popup.h"
 #include "src/core/display_manager.h"
+#include "src/tiles/tile_config.h"
 #include <SD.h>
 #include <M5Unified.h>
 #include <vector>
 #include <draw/lv_image_decoder.h>
+#include <misc/cache/instance/lv_image_cache.h>
+#include <misc/cache/instance/lv_image_header_cache.h>
 #include <libs/tjpgd/tjpgd.h>
 #include <HTTPClient.h>
+#include <WiFi.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
+#include "esp_heap_caps.h"
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/queue.h>
 
 // Globaler Context fuer das Image Popup
 static lv_obj_t* g_image_popup_overlay = nullptr;
@@ -39,11 +47,41 @@ static uint8_t* g_image_ram_buf = nullptr;
 static size_t g_image_ram_buf_size = 0;
 static bool g_image_ram_active = false;
 static String g_image_ram_source;
+static const char* kUrlCacheDir = "/_url_cache";
+static constexpr uint32_t kUrlCacheIntervalMs = 30UL * 1000UL;
+static constexpr uint32_t kUrlCacheInitialDelayMs = 30UL * 1000UL;
+static uint32_t g_url_cache_next_ms = 0;
+
+struct UrlCacheEntry {
+  String url;
+  String bin_path;
+  uint32_t last_update_ms = 0;
+};
+
+static std::vector<UrlCacheEntry> g_url_cache_entries;
+static QueueHandle_t g_url_cache_queue = nullptr;
+static QueueHandle_t g_url_cache_done_queue = nullptr;
+static TaskHandle_t g_url_cache_task = nullptr;
+static bool g_url_cache_worker_ready = false;
+static constexpr size_t kUrlJobMaxLen = 256;
+static constexpr UBaseType_t kUrlQueueLen = 32;
+
+struct UrlJob {
+  char url[kUrlJobMaxLen];
+};
 static void show_image_popup_error(const char* title, const char* path);
 static void apply_slideshow_display_mode(bool enable);
 static void schedule_popup_restore();
 static void cancel_popup_restore();
 static void free_image_ram();
+static String make_url_cache_bin_path(const String& url);
+static void register_url_cache_entry(const String& url);
+static bool update_url_cache(const String& url, String& out_bin_path, String& error);
+static void refresh_url_cache_entries();
+static void ensure_url_cache_worker();
+static bool enqueue_url_job(const String& url);
+static void url_cache_yield();
+static void process_url_cache_done();
 
 static void close_image_popup(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
@@ -184,13 +222,101 @@ static String build_url_base(const String& url) {
   return base;
 }
 
-static bool download_url_to_sd(const String& url, String& out_path, String& error) {
+static uint32_t hash_url(const String& url) {
+  uint32_t h = 2166136261u;
+  for (size_t i = 0; i < url.length(); ++i) {
+    h ^= static_cast<uint8_t>(url[i]);
+    h *= 16777619u;
+  }
+  return h;
+}
+
+static bool ensure_sd_ready() {
+  if (SD.cardType() != CARD_NONE) return true;
+  static uint32_t last_attempt_ms = 0;
+  uint32_t now = millis();
+  if (last_attempt_ms != 0 && (now - last_attempt_ms) < 5000U) {
+    return false;
+  }
+  last_attempt_ms = now;
+  SPI.begin(43, 39, 44, 42);
+  if (!SD.begin(42, SPI, 25000000)) {
+    return false;
+  }
+  return SD.cardType() != CARD_NONE;
+}
+
+static void* alloc_image_buf(size_t size, bool prefer_psram) {
+  int caps = prefer_psram ? (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) : (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  void* ptr = heap_caps_malloc(size, caps);
+  if (!ptr && prefer_psram) {
+    ptr = heap_caps_malloc(size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  }
+  return ptr;
+}
+
+static void url_cache_yield() {
+  if (g_url_cache_task && xTaskGetCurrentTaskHandle() == g_url_cache_task) {
+    vTaskDelay(1);
+  }
+}
+
+static bool ensure_url_cache_dir() {
+  if (!ensure_sd_ready()) return false;
+  if (SD.exists(kUrlCacheDir)) return true;
+  return SD.mkdir(kUrlCacheDir);
+}
+
+static String make_url_cache_base(const String& url) {
+  uint32_t h = hash_url(url);
+  char buf[64];
+  snprintf(buf, sizeof(buf), "%s/u%08lX", kUrlCacheDir, static_cast<unsigned long>(h));
+  return String(buf);
+}
+
+static String make_url_cache_bin_path(const String& url) {
+  return make_url_cache_base(url) + ".bin";
+}
+
+static bool write_bin_file(const String& bin_path, const lv_image_header_t& header, const uint8_t* data, size_t data_len, String& error) {
+  if (!data || data_len == 0) {
+    error = "Leere Bilddaten";
+    return false;
+  }
+  if (SD.exists(bin_path)) {
+    SD.remove(bin_path);
+  }
+  File f = SD.open(bin_path, FILE_WRITE);
+  if (!f) {
+    error = "SD Schreibfehler";
+    return false;
+  }
+  size_t header_len = sizeof(lv_image_header_t);
+  if (f.write(reinterpret_cast<const uint8_t*>(&header), header_len) != header_len) {
+    f.close();
+    error = "BIN Header Fehler";
+    return false;
+  }
+  size_t written = f.write(data, data_len);
+  f.close();
+  if (written != data_len) {
+    error = "BIN Daten Fehler";
+    return false;
+  }
+  return true;
+}
+
+static bool download_url_to_sd(const String& url, const String& target_base, String& out_path, String& error) {
   HTTPClient http;
   bool https = false;
   String host;
   uint16_t port = 0;
   String path;
   if (!parse_url(url, https, host, port, path, error)) return false;
+  if (!ensure_url_cache_dir()) {
+    error = "Cache Ordner Fehler";
+    return false;
+  }
   WiFiClientSecure secure_client;
   if (https) {
     secure_client.setInsecure();
@@ -244,7 +370,7 @@ static bool download_url_to_sd(const String& url, String& out_path, String& erro
     return false;
   }
 
-  out_path = "/_url_cache" + ext;
+  out_path = target_base + ext;
   if (SD.exists(out_path)) {
     SD.remove(out_path);
   }
@@ -266,6 +392,7 @@ static bool download_url_to_sd(const String& url, String& out_path, String& erro
         f.write(buffer, read_len);
         if (remaining > 0) remaining -= read_len;
       }
+      url_cache_yield();
     } else {
       delay(2);
     }
@@ -386,6 +513,9 @@ static int tjpgd_output(JDEC* jd, void* bitmap, JRECT* rect) {
         }
       }
     }
+    if ((y & 0x0F) == 0) {
+      url_cache_yield();
+    }
   }
   return 1;
 }
@@ -490,6 +620,7 @@ static bool decode_jpeg_to_ram(const String& fullPath, lv_image_header_t& header
     if (end >= ctx.dst_w) end = ctx.dst_w - 1;
     ctx.x_start[x] = static_cast<uint16_t>(start);
     ctx.x_end[x] = static_cast<uint16_t>(end);
+    if ((x & 0x3F) == 0) url_cache_yield();
   }
   for (uint16_t y = 0; y < ctx.src_h; ++y) {
     uint32_t start = (static_cast<uint32_t>(y) * ctx.dst_h) / ctx.src_h;
@@ -501,6 +632,7 @@ static bool decode_jpeg_to_ram(const String& fullPath, lv_image_header_t& header
     if (end >= ctx.dst_h) end = ctx.dst_h - 1;
     ctx.y_start[y] = static_cast<uint16_t>(start);
     ctx.y_end[y] = static_cast<uint16_t>(end);
+    if ((y & 0x3F) == 0) url_cache_yield();
   }
 
   rc = jd_decomp(&jd, tjpgd_output, 0);
@@ -534,6 +666,268 @@ static bool decode_jpeg_to_ram(const String& fullPath, lv_image_header_t& header
   header.stride = ctx.dst_w * 2U;
   header.cf = LV_COLOR_FORMAT_RGB565_SWAPPED;
   return true;
+}
+
+static bool decode_jpeg_to_buffer(const String& fullPath, uint8_t*& out_buf, size_t& out_size, uint16_t& out_w, uint16_t& out_h, String& error) {
+  out_buf = nullptr;
+  out_size = 0;
+  out_w = 0;
+  out_h = 0;
+  File f = SD.open(fullPath, FILE_READ);
+  if (!f) {
+    error = "JPEG Datei nicht lesbar";
+    return false;
+  }
+
+  uint8_t* work = static_cast<uint8_t*>(alloc_image_buf(kJpegWorkbufSize, false));
+  if (!work) {
+    f.close();
+    error = "Kein RAM fuer JPEG";
+    return false;
+  }
+
+  JDEC jd;
+  JpegDecodeContext ctx{};
+  ctx.file = &f;
+
+  JRESULT rc = jd_prepare(&jd, tjpgd_input, work, kJpegWorkbufSize, &ctx);
+  if (rc != JDR_OK) {
+    heap_caps_free(work);
+    f.close();
+    error = "JPEG Header Fehler";
+    return false;
+  }
+
+  ctx.src_w = jd.width;
+  ctx.src_h = jd.height;
+  if (!calc_contain_size(ctx.src_w, ctx.src_h, ctx.dst_w, ctx.dst_h)) {
+    heap_caps_free(work);
+    f.close();
+    error = "JPEG Groesse ungueltig";
+    return false;
+  }
+
+  size_t dst_pixels = static_cast<size_t>(ctx.dst_w) * ctx.dst_h;
+  size_t buf_size = dst_pixels * 2U;
+  ctx.dst_buf = static_cast<uint16_t*>(alloc_image_buf(buf_size, true));
+  if (!ctx.dst_buf) {
+    heap_caps_free(work);
+    f.close();
+    error = "Kein RAM fuer Zielbild";
+    return false;
+  }
+  memset(ctx.dst_buf, 0, buf_size);
+
+  ctx.x_start = static_cast<uint16_t*>(alloc_image_buf(sizeof(uint16_t) * ctx.src_w, false));
+  ctx.x_end = static_cast<uint16_t*>(alloc_image_buf(sizeof(uint16_t) * ctx.src_w, false));
+  ctx.y_start = static_cast<uint16_t*>(alloc_image_buf(sizeof(uint16_t) * ctx.src_h, false));
+  ctx.y_end = static_cast<uint16_t*>(alloc_image_buf(sizeof(uint16_t) * ctx.src_h, false));
+  if (!ctx.x_start || !ctx.x_end || !ctx.y_start || !ctx.y_end) {
+    if (ctx.x_start) heap_caps_free(ctx.x_start);
+    if (ctx.x_end) heap_caps_free(ctx.x_end);
+    if (ctx.y_start) heap_caps_free(ctx.y_start);
+    if (ctx.y_end) heap_caps_free(ctx.y_end);
+    heap_caps_free(ctx.dst_buf);
+    heap_caps_free(work);
+    f.close();
+    error = "Kein RAM fuer Skalierung";
+    return false;
+  }
+
+  for (uint16_t x = 0; x < ctx.src_w; ++x) {
+    uint32_t start = (static_cast<uint32_t>(x) * ctx.dst_w) / ctx.src_w;
+    uint32_t end = (static_cast<uint32_t>(x + 1) * ctx.dst_w) / ctx.src_w;
+    if (end == 0) end = 1;
+    end -= 1;
+    if (end < start) end = start;
+    if (start >= ctx.dst_w) start = ctx.dst_w - 1;
+    if (end >= ctx.dst_w) end = ctx.dst_w - 1;
+    ctx.x_start[x] = static_cast<uint16_t>(start);
+    ctx.x_end[x] = static_cast<uint16_t>(end);
+  }
+  for (uint16_t y = 0; y < ctx.src_h; ++y) {
+    uint32_t start = (static_cast<uint32_t>(y) * ctx.dst_h) / ctx.src_h;
+    uint32_t end = (static_cast<uint32_t>(y + 1) * ctx.dst_h) / ctx.src_h;
+    if (end == 0) end = 1;
+    end -= 1;
+    if (end < start) end = start;
+    if (start >= ctx.dst_h) start = ctx.dst_h - 1;
+    if (end >= ctx.dst_h) end = ctx.dst_h - 1;
+    ctx.y_start[y] = static_cast<uint16_t>(start);
+    ctx.y_end[y] = static_cast<uint16_t>(end);
+  }
+
+  rc = jd_decomp(&jd, tjpgd_output, 0);
+
+  heap_caps_free(ctx.x_start);
+  heap_caps_free(ctx.x_end);
+  heap_caps_free(ctx.y_start);
+  heap_caps_free(ctx.y_end);
+  heap_caps_free(work);
+  f.close();
+
+  if (rc != JDR_OK) {
+    heap_caps_free(ctx.dst_buf);
+    error = "JPEG Decode Fehler";
+    return false;
+  }
+
+  out_buf = reinterpret_cast<uint8_t*>(ctx.dst_buf);
+  out_size = buf_size;
+  out_w = ctx.dst_w;
+  out_h = ctx.dst_h;
+  return true;
+}
+
+static bool convert_jpeg_to_bin(const String& jpeg_path, const String& bin_path, String& error) {
+  uint8_t* buf = nullptr;
+  size_t buf_size = 0;
+  uint16_t w = 0;
+  uint16_t h = 0;
+  if (!decode_jpeg_to_buffer(jpeg_path, buf, buf_size, w, h, error)) return false;
+  lv_image_header_t bin_header{};
+  bin_header.magic = LV_IMAGE_HEADER_MAGIC;
+  bin_header.cf = LV_COLOR_FORMAT_RGB565_SWAPPED;
+  bin_header.flags = 0;
+  bin_header.w = w;
+  bin_header.h = h;
+  bin_header.stride = w * 2U;
+  bin_header.reserved_2 = 0;
+  bool ok = write_bin_file(bin_path, bin_header, buf, buf_size, error);
+  heap_caps_free(buf);
+  return ok;
+}
+
+static bool update_url_cache(const String& url, String& out_bin_path, String& error) {
+  if (!ensure_sd_ready()) {
+    error = "SD fehlt";
+    return false;
+  }
+  if (!ensure_url_cache_dir()) {
+    error = "Cache Ordner Fehler";
+    return false;
+  }
+  String base = make_url_cache_base(url);
+  String download_path;
+  if (!download_url_to_sd(url, base, download_path, error)) return false;
+  if (!ends_with_ignore_case(download_path, ".jpg") && !ends_with_ignore_case(download_path, ".jpeg")) {
+    SD.remove(download_path);
+    error = "Nur JPEG unterstuetzt";
+    return false;
+  }
+  String bin_path = base + ".bin";
+  String tmp_path = bin_path + ".tmp";
+  if (!convert_jpeg_to_bin(download_path, tmp_path, error)) {
+    SD.remove(download_path);
+    return false;
+  }
+  if (SD.exists(bin_path)) SD.remove(bin_path);
+  if (!SD.rename(tmp_path, bin_path)) {
+    SD.remove(tmp_path);
+    SD.remove(download_path);
+    error = "BIN Rename Fehler";
+    return false;
+  }
+  SD.remove(download_path);
+  out_bin_path = bin_path;
+  return SD.exists(bin_path);
+}
+
+static void register_url_cache_entry(const String& url) {
+  String normalized = url;
+  normalized.trim();
+  if (!is_url_path(normalized)) return;
+  for (const auto& entry : g_url_cache_entries) {
+    if (entry.url == normalized) return;
+  }
+  UrlCacheEntry entry;
+  entry.url = normalized;
+  entry.bin_path = make_url_cache_bin_path(normalized);
+  g_url_cache_entries.push_back(entry);
+}
+
+static void refresh_url_cache_entries() {
+  std::vector<UrlCacheEntry> updated;
+  auto add_entry = [&](const String& url) {
+    String normalized = url;
+    normalized.trim();
+    if (!is_url_path(normalized)) return;
+    for (const auto& entry : updated) {
+      if (entry.url == normalized) return;
+    }
+    for (const auto& entry : g_url_cache_entries) {
+      if (entry.url == normalized) {
+        updated.push_back(entry);
+        return;
+      }
+    }
+    UrlCacheEntry entry;
+    entry.url = normalized;
+    entry.bin_path = make_url_cache_bin_path(normalized);
+    updated.push_back(entry);
+  };
+
+  const TileGridConfig* grids[] = {
+    &tileConfig.getTab0Grid(),
+    &tileConfig.getTab1Grid(),
+    &tileConfig.getTab2Grid()
+  };
+  for (const TileGridConfig* grid : grids) {
+    for (size_t i = 0; i < TILES_PER_GRID; ++i) {
+      const Tile& tile = grid->tiles[i];
+      if (tile.type != TILE_IMAGE) continue;
+      add_entry(tile.image_path);
+    }
+  }
+  g_url_cache_entries.swap(updated);
+}
+
+static void url_cache_worker(void*) {
+  for (;;) {
+    UrlJob job{};
+    if (xQueueReceive(g_url_cache_queue, &job, portMAX_DELAY) != pdTRUE) continue;
+    if (!job.url[0]) continue;
+    String url = String(job.url);
+    String err;
+    String out_bin;
+    Serial.printf("[ImagePopup] URL Cache Worker: %s\n", url.c_str());
+    if (!update_url_cache(url, out_bin, err)) {
+      Serial.printf("[ImagePopup] URL Cache Fehler: %s -> %s\n", url.c_str(), err.c_str());
+    } else {
+      Serial.printf("[ImagePopup] URL Cache OK: %s\n", out_bin.c_str());
+      if (g_url_cache_done_queue) {
+        UrlJob done{};
+        url.toCharArray(done.url, sizeof(done.url));
+        xQueueSend(g_url_cache_done_queue, &done, 0);
+      }
+    }
+  }
+}
+
+static void ensure_url_cache_worker() {
+  if (g_url_cache_worker_ready) return;
+  g_url_cache_queue = xQueueCreate(kUrlQueueLen, sizeof(UrlJob));
+  if (!g_url_cache_queue) return;
+  if (!g_url_cache_done_queue) {
+    g_url_cache_done_queue = xQueueCreate(kUrlQueueLen, sizeof(UrlJob));
+  }
+  int core = 1;
+#ifdef ARDUINO_RUNNING_CORE
+  core = (ARDUINO_RUNNING_CORE == 0) ? 1 : 0;
+#endif
+  BaseType_t ok = xTaskCreatePinnedToCore(url_cache_worker, "urlCache", 8192, nullptr, 1, &g_url_cache_task, core);
+  if (ok == pdPASS) {
+    g_url_cache_worker_ready = true;
+  }
+}
+
+static bool enqueue_url_job(const String& url) {
+  ensure_url_cache_worker();
+  if (!g_url_cache_worker_ready || !g_url_cache_queue) return false;
+  UrlJob job{};
+  url.toCharArray(job.url, sizeof(job.url));
+  if (!job.url[0]) return false;
+  return xQueueSend(g_url_cache_queue, &job, 0) == pdTRUE;
 }
 
 static void collect_images(const String& dir, std::vector<String>& out, size_t max_entries, uint8_t depth, bool allow_bin, bool allow_jpeg) {
@@ -592,6 +986,10 @@ static bool show_image_popup_internal(const String& fullPath, bool allow_error, 
   } else {
     free_image_ram();
     String new_src = "S:" + fullPath;
+    if (force_reload) {
+      lv_image_cache_drop(new_src.c_str());
+      lv_image_header_cache_drop(new_src.c_str());
+    }
     if (!force_reload && g_current_image_path == new_src && g_current_header_valid) {
       header = g_current_header;
     } else {
@@ -630,6 +1028,23 @@ static bool show_image_popup_internal(const String& fullPath, bool allow_error, 
 
   g_image_shown = true;
   return true;
+}
+
+static void process_url_cache_done() {
+  if (!g_url_cache_done_queue) return;
+  if (!ensure_sd_ready()) return;
+  UrlJob job{};
+  while (xQueueReceive(g_url_cache_done_queue, &job, 0) == pdTRUE) {
+    if (!job.url[0]) continue;
+    String url = String(job.url);
+    String cached = make_url_cache_bin_path(url);
+    String cached_src = "S:" + cached;
+    if (g_image_shown && g_current_image_path == cached_src) {
+      apply_slideshow_display_mode(true);
+      displayManager.setReverseFlushOnce();
+      show_image_popup_internal(cached, false, true);
+    }
+  }
 }
 
 static void slideshow_tick(lv_timer_t*) {
@@ -698,22 +1113,37 @@ void show_image_popup(const char* path, uint16_t slideshow_sec) {
   hide_sensor_popup();
   hide_light_popup();
 
+  if (!ensure_sd_ready()) {
+    show_image_popup_error("SD Karte fehlt", "/");
+    return;
+  }
+
   String rawPath = String(path);
   rawPath.trim();
   if (is_url_path(rawPath)) {
+    register_url_cache_entry(rawPath);
+    ensure_url_cache_worker();
     stop_slideshow(true);
     apply_slideshow_display_mode(true);
     displayManager.setReverseFlushOnce();
-    String cached;
-    String err;
-    Serial.printf("[ImagePopup] Lade URL: %s\n", rawPath.c_str());
-    if (!download_url_to_sd(rawPath, cached, err)) {
-      show_image_popup_error("URL Fehler", err.c_str());
+    String cached = make_url_cache_bin_path(rawPath);
+    if (!SD.exists(cached)) {
+      if (WiFi.status() != WL_CONNECTED) {
+        show_image_popup_error("URL Cache fehlt", "Kein WLAN");
+        apply_slideshow_display_mode(false);
+        return;
+      }
+      Serial.printf("[ImagePopup] URL Cache fehlte, Queue: %s\n", rawPath.c_str());
+      enqueue_url_job(rawPath);
+      show_image_popup_error("URL Cache wird erstellt", rawPath.c_str());
       apply_slideshow_display_mode(false);
       return;
     }
+    if (WiFi.status() == WL_CONNECTED) {
+      enqueue_url_job(rawPath);
+    }
     Serial.printf("[ImagePopup] Zeige URL Cache: %s\n", cached.c_str());
-    show_image_popup_internal(cached, true, true);
+    show_image_popup_internal(cached, true, false);
     return;
   }
 
@@ -782,4 +1212,29 @@ static void apply_slideshow_display_mode(bool enable) {
   }
 }
 
+void image_popup_service_url_cache() {
+  process_url_cache_done();
+  if (!ensure_sd_ready()) return;
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  uint32_t now = millis();
+  if (g_url_cache_next_ms == 0) {
+    g_url_cache_next_ms = now + kUrlCacheInitialDelayMs;
+    return;
+  }
+  if ((int32_t)(now - g_url_cache_next_ms) < 0) return;
+
+  ensure_url_cache_worker();
+  refresh_url_cache_entries();
+  if (g_url_cache_entries.empty()) {
+    g_url_cache_next_ms = now + kUrlCacheIntervalMs;
+    return;
+  }
+
+  Serial.printf("[ImagePopup] URL Cache Queue (%u)\n", static_cast<unsigned int>(g_url_cache_entries.size()));
+  for (const auto& entry : g_url_cache_entries) {
+    enqueue_url_job(entry.url);
+  }
+  g_url_cache_next_ms = millis() + kUrlCacheIntervalMs;
+}
  

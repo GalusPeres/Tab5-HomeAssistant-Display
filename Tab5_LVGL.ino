@@ -10,6 +10,7 @@
 #include "src/core/power_manager.h"
 #include "src/ui/ui_manager.h"
 #include "src/ui/sensor_popup.h"
+#include "src/ui/image_popup.h"
 #include "src/network/network_manager.h"
 #include "src/network/mqtt_handlers.h"
 #include "src/network/mqtt_topics.h"
@@ -305,6 +306,8 @@ void loop() {
       networkManager.update();
     }
   }
+
+  image_popup_service_url_cache();
 
   if (now - last_status_update > 2000UL) {
     last_status_update = now;

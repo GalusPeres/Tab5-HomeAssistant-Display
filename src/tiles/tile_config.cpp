@@ -1,6 +1,7 @@
 #include "src/tiles/tile_config.h"
 #include <Preferences.h>
 #include <string.h>
+#include <SD.h>
 
 static const char* PREF_NAMESPACE = "tab5_tiles";
 static constexpr uint8_t PACKED_GRID_VERSION = 3;
@@ -11,6 +12,7 @@ static constexpr uint16_t IMAGE_SLIDESHOW_MAX_SEC = 3600;
 static constexpr size_t TITLE_MAX     = 32;
 static constexpr size_t ICON_MAX      = 32;  // MDI Icon Name (z.B. "thermometer")
 static constexpr size_t ENTITY_MAX    = 64;
+static constexpr size_t ENTITY_MAX_V4 = 128;
 static constexpr size_t UNIT_MAX      = 16;
 static constexpr size_t SCENE_MAX     = 32;
 static constexpr size_t MACRO_MAX     = 32;
@@ -55,6 +57,29 @@ struct PackedGridV2 {
   uint8_t version;
   uint8_t reserved[3];  // Alignment / future use
   PackedTileV2 tiles[TILES_PER_GRID];
+};
+
+struct PackedTileV4 {
+  uint8_t type;
+  uint8_t sensor_decimals;
+  uint8_t key_code;
+  uint8_t key_modifier;
+  uint32_t bg_color;
+  char title[TITLE_MAX];
+  char icon_name[ICON_MAX];        // MDI Icon Name
+  char sensor_entity[ENTITY_MAX_V4];
+  char sensor_unit[UNIT_MAX];
+  char scene_alias[SCENE_MAX];
+  char key_macro[MACRO_MAX];
+  uint8_t sensor_value_font;
+  uint16_t image_slideshow_sec;
+  uint8_t reserved[1];             // Alignment / future use
+};
+
+struct PackedGridV4 {
+  uint8_t version;
+  uint8_t reserved[3];  // Alignment / future use
+  PackedTileV4 tiles[TILES_PER_GRID];
 };
 
 struct PackedTile {
@@ -111,6 +136,51 @@ static uint16_t clampImageSlideshowSeconds(uint16_t val) {
 }
 
 static bool looksLikeImagePath(const String& value);
+static const char* kImagePathDir = "/_tile_links";
+
+static bool sdReady() {
+  return SD.cardType() != CARD_NONE;
+}
+
+static bool ensureImagePathDir() {
+  if (!sdReady()) return false;
+  if (SD.exists(kImagePathDir)) return true;
+  return SD.mkdir(kImagePathDir);
+}
+
+static String imagePathFile(const char* prefix, size_t index) {
+  char buf[64];
+  snprintf(buf, sizeof(buf), "%s/%s_%02u.url", kImagePathDir, prefix, static_cast<unsigned>(index));
+  return String(buf);
+}
+
+static bool writeImagePathSd(const char* prefix, size_t index, const String& path) {
+  if (!ensureImagePathDir()) return false;
+  String filePath = imagePathFile(prefix, index);
+  if (path.length() == 0) {
+    if (SD.exists(filePath)) SD.remove(filePath);
+    return true;
+  }
+  if (SD.exists(filePath)) SD.remove(filePath);
+  File f = SD.open(filePath, FILE_WRITE);
+  if (!f) return false;
+  f.print(path);
+  f.close();
+  return true;
+}
+
+static bool readImagePathSd(const char* prefix, size_t index, String& out) {
+  out = "";
+  if (!sdReady()) return false;
+  String filePath = imagePathFile(prefix, index);
+  if (!SD.exists(filePath)) return false;
+  File f = SD.open(filePath, FILE_READ);
+  if (!f) return false;
+  out = f.readString();
+  f.close();
+  out.trim();
+  return out.length() > 0;
+}
 
 static void packTile(const Tile& in, PackedTile& out) {
   memset(&out, 0, sizeof(out));
@@ -126,15 +196,11 @@ static void packTile(const Tile& in, PackedTile& out) {
   copyString(in.sensor_unit, out.sensor_unit, sizeof(out.sensor_unit));
   copyString(in.scene_alias, out.scene_alias, sizeof(out.scene_alias));
   if (in.type == TILE_IMAGE) {
-    // Element-Pool: TILE_IMAGE nutzt sensor_entity für image_path (mehr Platz als key_macro).
-    String image_path = in.image_path;
-    if (image_path.length() == 0 && looksLikeImagePath(in.key_macro)) {
-      image_path = in.key_macro;  // Legacy fallback
-    }
-    copyString(image_path, out.sensor_entity, sizeof(out.sensor_entity));
+    // TILE_IMAGE speichert image_path nicht im NVS (liegt auf SD).
+    out.sensor_entity[0] = '\0';
     out.key_macro[0] = '\0';
-    Serial.printf("[TileConfig] packTile - TILE_IMAGE: image_path='%s', packed='%s'\n",
-                  image_path.c_str(), out.sensor_entity);
+    Serial.printf("[TileConfig] packTile - TILE_IMAGE: image_path='%s' (SD)\n",
+                  in.image_path.c_str());
   } else {
     copyString(in.sensor_entity, out.sensor_entity, sizeof(out.sensor_entity));
     copyString(in.key_macro, out.key_macro, sizeof(out.key_macro));
@@ -146,6 +212,25 @@ static bool looksLikeImagePath(const String& value) {
   if (value.startsWith("/") || value.startsWith("__")) return true;
   if (value.startsWith("http://") || value.startsWith("https://")) return true;
   return false;
+}
+
+static void applyImagePathsFromSd(const char* prefix, TileGridConfig& grid) {
+  const bool have_sd = sdReady();
+  for (size_t i = 0; i < TILES_PER_GRID; ++i) {
+    Tile& tile = grid.tiles[i];
+    if (tile.type != TILE_IMAGE) continue;
+    String sd_path;
+    if (have_sd && readImagePathSd(prefix, i, sd_path)) {
+      tile.image_path = sd_path;
+      continue;
+    }
+    if (have_sd && tile.image_path.length() > 0) {
+      writeImagePathSd(prefix, i, tile.image_path);
+    }
+    if (!have_sd) {
+      tile.image_path = "";
+    }
+  }
 }
 
 static void unpackTile(const PackedTile& in, Tile& out) {
@@ -186,6 +271,36 @@ static void unpackTileV2(const PackedTileV2& in, Tile& out) {
   out.key_code = in.key_code;
   out.key_modifier = in.key_modifier;
   out.image_slideshow_sec = IMAGE_SLIDESHOW_DEFAULT_SEC;
+  out.title = String(in.title);
+  out.icon_name = String(in.icon_name);
+  out.sensor_entity = String(in.sensor_entity);
+  out.sensor_unit = String(in.sensor_unit);
+  out.scene_alias = String(in.scene_alias);
+  out.key_macro = String(in.key_macro);
+  // Element-Pool: TILE_IMAGE nutzt sensor_entity fuer image_path (fallback: key_macro aus Altbestand).
+  if (out.type == TILE_IMAGE) {
+    if (looksLikeImagePath(out.sensor_entity)) {
+      out.image_path = out.sensor_entity;
+    } else {
+      out.image_path = out.key_macro;
+    }
+    out.key_macro = "";
+    out.sensor_entity = "";
+    Serial.printf("[TileConfig] unpackTile - TILE_IMAGE: packed(sensor)='%s', packed(macro)='%s', image_path='%s'\n",
+                  in.sensor_entity, in.key_macro, out.image_path.c_str());
+  } else {
+    out.image_path = "";
+  }
+}
+
+static void unpackTileV4(const PackedTileV4& in, Tile& out) {
+  out.type = static_cast<TileType>(in.type);
+  out.bg_color = in.bg_color;
+  out.sensor_decimals = clampDecimals(in.sensor_decimals);
+  out.sensor_value_font = clampSensorValueFont(in.sensor_value_font);
+  out.key_code = in.key_code;
+  out.key_modifier = in.key_modifier;
+  out.image_slideshow_sec = clampImageSlideshowSeconds(in.image_slideshow_sec);
   out.title = String(in.title);
   out.icon_name = String(in.icon_name);
   out.sensor_entity = String(in.sensor_entity);
@@ -427,6 +542,22 @@ bool TileConfig::loadGrid(const char* prefix, TileGridConfig& grid) {
           prefs.end();
           Serial.printf("[TileConfig] Grid '%s' geladen (blob v%u)\n",
                         prefix, static_cast<unsigned>(packed.version));
+          applyImagePathsFromSd(prefix, grid);
+          return true;
+        }
+      }
+
+      if (blob_len >= sizeof(PackedGridV4)) {
+        PackedGridV4 packed{};
+        size_t read = prefs.getBytes(blob_key, &packed, sizeof(packed));
+        if (read == sizeof(packed) && packed.version == 4) {
+          for (size_t i = 0; i < TILES_PER_GRID; ++i) {
+            unpackTileV4(packed.tiles[i], grid.tiles[i]);
+          }
+          prefs.end();
+          Serial.printf("[TileConfig] Grid '%s' geladen (blob v4)\n", prefix);
+          applyImagePathsFromSd(prefix, grid);
+          saveGrid(prefix, grid);  // Migration auf neues Format
           return true;
         }
       }
@@ -440,6 +571,7 @@ bool TileConfig::loadGrid(const char* prefix, TileGridConfig& grid) {
           }
           prefs.end();
           Serial.printf("[TileConfig] Grid '%s' geladen (blob v2)\n", prefix);
+          applyImagePathsFromSd(prefix, grid);
           saveGrid(prefix, grid);  // Migration auf neues Format
           return true;
         }
@@ -454,6 +586,7 @@ bool TileConfig::loadGrid(const char* prefix, TileGridConfig& grid) {
           }
           prefs.end();
           Serial.printf("[TileConfig] Grid '%s' geladen (blob v1)\n", prefix);
+          applyImagePathsFromSd(prefix, grid);
           saveGrid(prefix, grid);  // Migration auf neues Format
           return true;
         }
@@ -466,6 +599,7 @@ bool TileConfig::loadGrid(const char* prefix, TileGridConfig& grid) {
   // Fallback: Legacy-Keys laden und sofort migrieren
   bool legacy_ok = loadGridLegacy(prefix, grid);
   if (legacy_ok) {
+    applyImagePathsFromSd(prefix, grid);
     saveGrid(prefix, grid);  // Migration: schreibt Blob
   }
   return legacy_ok;
@@ -491,6 +625,13 @@ bool TileConfig::saveGrid(const char* prefix, const TileGridConfig& grid) {
   PackedGrid packed{};
   packed.version = PACKED_GRID_VERSION;
   for (size_t i = 0; i < TILES_PER_GRID; ++i) {
+    if (grid.tiles[i].type == TILE_IMAGE) {
+      if (!sdReady()) {
+        Serial.println("[TileConfig] WARN: SD fehlt, image_path wird nicht gespeichert");
+      } else if (!writeImagePathSd(prefix, i, grid.tiles[i].image_path)) {
+        Serial.println("[TileConfig] WARN: image_path konnte nicht auf SD gespeichert werden");
+      }
+    }
     packTile(grid.tiles[i], packed.tiles[i]);
   }
 

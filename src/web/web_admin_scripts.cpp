@@ -1090,14 +1090,22 @@ void appendAdminScripts(String& html) {
       const navTargetValue = navTargetElement ? navTargetElement.value : 'ELEMENT_NOT_FOUND';
       console.log('[DEBUG] Navigate Target - Element:', navTargetElement, 'Value:', navTargetValue, 'Prefix:', prefix);
       formData.append('navigate_target', navTargetValue);
-    } else if (typeValue === '5') {
-      formData.append('switch_entity', document.getElementById(prefix + '_switch_entity').value);
-      const styleEl = document.getElementById(prefix + '_switch_style');
-      formData.append('switch_style', styleEl ? styleEl.value : '0');
-    } else if (typeValue === '6') {
-      formData.append('image_path', document.getElementById(prefix + '_image_path').value);
-      formData.append('image_slideshow_sec', document.getElementById(prefix + '_image_slideshow_sec').value);
-    }
+      } else if (typeValue === '5') {
+        formData.append('switch_entity', document.getElementById(prefix + '_switch_entity').value);
+        const styleEl = document.getElementById(prefix + '_switch_style');
+        formData.append('switch_style', styleEl ? styleEl.value : '0');
+      } else if (typeValue === '6') {
+        const imgSelect = document.getElementById(prefix + '_image_select');
+        const imgUrl = document.getElementById(prefix + '_image_url');
+        const imgPath = document.getElementById(prefix + '_image_path');
+        let finalPath = imgPath ? imgPath.value : '';
+        if (imgSelect && imgSelect.value === imageUrlToken && imgUrl && imgUrl.value.trim().length > 0) {
+          finalPath = imgUrl.value.trim();
+          if (imgPath) imgPath.value = finalPath;
+        }
+        formData.append('image_path', finalPath);
+        formData.append('image_slideshow_sec', document.getElementById(prefix + '_image_slideshow_sec').value);
+      }
     fetch('/api/tiles', { method:'POST', body:formData })
       .then(res => res.json())
       .then(data => {
