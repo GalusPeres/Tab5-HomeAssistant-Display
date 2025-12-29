@@ -1059,15 +1059,22 @@ static void refresh_url_cache_entries(uint32_t now) {
     for (const auto& entry : g_url_cache_entries) {
       if (entry.url == normalized) {
         UrlCacheEntry copy = entry;
-        if (interval_ms > 0 && (copy.interval_ms == 0 || interval_ms < copy.interval_ms)) {
+        const uint32_t prev_interval = copy.interval_ms;
+        if (interval_ms > 0) {
           copy.interval_ms = interval_ms;
         }
         if (copy.next_due_ms == 0) {
           copy.next_due_ms = now + kUrlCacheInitialDelayMs;
         } else if (interval_ms > 0) {
-          uint32_t min_due = now + interval_ms;
-          if ((int32_t)(copy.next_due_ms - min_due) > 0) {
-            copy.next_due_ms = min_due;
+          uint32_t target_due = now + interval_ms;
+          if (prev_interval == 0 || interval_ms > prev_interval) {
+            if ((int32_t)(target_due - copy.next_due_ms) > 0) {
+              copy.next_due_ms = target_due;
+            }
+          } else if (interval_ms < prev_interval) {
+            if ((int32_t)(copy.next_due_ms - target_due) > 0) {
+              copy.next_due_ms = target_due;
+            }
           }
         }
         updated.push_back(copy);
@@ -1389,9 +1396,6 @@ void show_image_popup(const char* path, uint16_t slideshow_sec) {
   hide_light_popup();
 
   if (!ensure_sd_ready()) {
-    if (g_open_url.length() > 0) {
-      request_url_cache_cancel(g_open_url);
-    }
     g_open_url = "";
     show_image_popup_error("SD Karte fehlt", "/");
     return;
@@ -1400,10 +1404,6 @@ void show_image_popup(const char* path, uint16_t slideshow_sec) {
   String rawPath = String(path);
   rawPath.trim();
   if (is_url_path(rawPath)) {
-    if (g_open_url.length() > 0 && g_open_url != rawPath) {
-      request_url_cache_cancel(g_open_url);
-    }
-    clear_url_cache_cancel(rawPath);
     g_open_url = rawPath;
     register_url_cache_entry(rawPath);
     ensure_url_cache_worker();
@@ -1431,9 +1431,6 @@ void show_image_popup(const char* path, uint16_t slideshow_sec) {
     return;
   }
 
-  if (g_open_url.length() > 0) {
-    request_url_cache_cancel(g_open_url);
-  }
   g_open_url = "";
   String fullPath = normalize_sd_path(rawPath);
   SlideshowMode mode = get_slideshow_mode(fullPath);
@@ -1457,9 +1454,6 @@ void hide_image_popup() {
     apply_slideshow_display_mode(true);
     displayManager.setReverseFlushOnce();
     lv_obj_add_flag(g_image_popup_overlay, LV_OBJ_FLAG_HIDDEN);
-    if (g_open_url.length() > 0) {
-      request_url_cache_cancel(g_open_url);
-    }
     g_open_url = "";
     g_image_shown = false;
     free_image_ram();
